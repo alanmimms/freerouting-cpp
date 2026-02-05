@@ -63,20 +63,54 @@ TEST_CASE("FixedPoint basic operations", "[fixedpoint]") {
   }
 }
 
-TEST_CASE("Arena allocator stub", "[arena]") {
+TEST_CASE("Arena allocator", "[arena]") {
   SECTION("Arena can be created") {
     Arena arena(1024);
     REQUIRE(arena.bytesCapacity() == 1024);
     REQUIRE(arena.bytesUsed() == 0);
+    REQUIRE(arena.bytesRemaining() == 1024);
   }
 
-  SECTION("Arena can allocate memory (stub)") {
+  SECTION("Arena can allocate memory") {
     Arena arena(1024);
     int* ptr = arena.alloc<int>(10);
     REQUIRE(ptr != nullptr);
 
-    // Note: in Phase 1 we'll properly track usage
-    // For now, stub uses malloc so usage isn't tracked
+    // Memory usage is tracked
+    REQUIRE(arena.bytesUsed() > 0);
+    REQUIRE(arena.bytesUsed() <= arena.bytesCapacity());
+  }
+
+  SECTION("Arena allocations are aligned") {
+    Arena arena(1024);
+    double* dptr = arena.alloc<double>(1);
+    REQUIRE(dptr != nullptr);
+    REQUIRE(reinterpret_cast<uintptr_t>(dptr) % alignof(double) == 0);
+
+    int* iptr = arena.alloc<int>(1);
+    REQUIRE(iptr != nullptr);
+    REQUIRE(reinterpret_cast<uintptr_t>(iptr) % Arena::kAlignment == 0);
+  }
+
+  SECTION("Arena can be reset") {
+    Arena arena(1024);
+    arena.alloc<int>(10);
+    size_t usedBefore = arena.bytesUsed();
+    REQUIRE(usedBefore > 0);
+
+    arena.reset();
+    REQUIRE(arena.bytesUsed() == 0);
+    REQUIRE(arena.bytesRemaining() == arena.bytesCapacity());
+  }
+
+  SECTION("Arena allocations are sequential") {
+    Arena arena(1024);
+    int* ptr1 = arena.alloc<int>(1);
+    int* ptr2 = arena.alloc<int>(1);
+
+    REQUIRE(ptr1 != nullptr);
+    REQUIRE(ptr2 != nullptr);
+    REQUIRE(ptr1 != ptr2);
   }
 
   SECTION("ArenaScope sets thread-local arena") {
@@ -86,6 +120,27 @@ TEST_CASE("Arena allocator stub", "[arena]") {
     {
       ArenaScope scope(arena);
       REQUIRE(threadArena == &arena);
+    }
+
+    REQUIRE(threadArena == nullptr);
+  }
+
+  SECTION("ArenaScope can be nested") {
+    Arena arena1(1024);
+    Arena arena2(1024);
+
+    REQUIRE(threadArena == nullptr);
+
+    {
+      ArenaScope scope1(arena1);
+      REQUIRE(threadArena == &arena1);
+
+      {
+        ArenaScope scope2(arena2);
+        REQUIRE(threadArena == &arena2);
+      }
+
+      REQUIRE(threadArena == &arena1);
     }
 
     REQUIRE(threadArena == nullptr);

@@ -39,3 +39,35 @@
 
 # debug information files
 *.dwo
+
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+Testing/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+
+# Coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Temporary files
+*.bak
+*.tmp

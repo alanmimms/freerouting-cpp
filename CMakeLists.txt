@@ -41,9 +41,16 @@ add_library(freerouting
   src/autoroute/MazeSearchAlgo.cpp
   src/autoroute/BatchAutorouter.cpp
   src/board/DrcEngine.cpp
+  src/cli/CommandLineArgs.cpp
 )
 target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR})
 target_link_libraries(freerouting PUBLIC pthread)
+
+# Main executable
+add_executable(freerouting-cli
+  src/main.cpp
+)
+target_link_libraries(freerouting-cli PRIVATE freerouting)
 
 # Testing with Catch2
 enable_testing()

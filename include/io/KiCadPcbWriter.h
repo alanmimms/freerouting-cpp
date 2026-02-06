@@ -77,6 +77,21 @@ private:
       out << "(net_class \"" << netClassName << "\" \"\")\n";
     }
 
+    // Footprints
+    for (const auto& footprint : pcb.footprints) {
+      writeFootprint(footprint, pcb.layers, out, level + 1);
+    }
+
+    // Segments
+    for (const auto& segment : pcb.segments) {
+      writeSegment(segment, pcb.layers, out, level + 1);
+    }
+
+    // Vias
+    for (const auto& via : pcb.vias) {
+      writeVia(via, pcb.layers, out, level + 1);
+    }
+
     writeIndent(out, level);
     out << ")\n";
   }
@@ -126,6 +141,108 @@ private:
   static void writeNet(const Net& net, std::ostream& out, int level) {
     writeIndent(out, level);
     out << "(net " << net.getNetNumber() << " \"" << net.getName() << "\")\n";
+  }
+
+  // Write segment definition
+  static void writeSegment(const KiCadSegment& segment, const LayerStructure& layers,
+                           std::ostream& out, int level) {
+    writeIndent(out, level);
+    out << "(segment";
+    out << " (start " << segment.startX << " " << segment.startY << ")";
+    out << " (end " << segment.endX << " " << segment.endY << ")";
+    out << " (width " << segment.width << ")";
+
+    // Get layer name
+    if (segment.layer >= 0 && segment.layer < layers.count()) {
+      out << " (layer \"" << layers[segment.layer].name << "\")";
+    } else {
+      out << " (layer \"F.Cu\")";  // Default fallback
+    }
+
+    out << " (net " << segment.netNumber << ")";
+
+    if (!segment.uuid.empty()) {
+      out << " (uuid \"" << segment.uuid << "\")";
+    }
+
+    out << ")\n";
+  }
+
+  // Write via definition
+  static void writeVia(const KiCadVia& via, const LayerStructure& layers,
+                       std::ostream& out, int level) {
+    writeIndent(out, level);
+    out << "(via";
+    out << " (at " << via.x << " " << via.y << ")";
+    out << " (size " << via.size << ")";
+    out << " (drill " << via.drill << ")";
+
+    // Write layer range
+    out << " (layers";
+    if (via.layersFrom >= 0 && via.layersFrom < layers.count()) {
+      out << " \"" << layers[via.layersFrom].name << "\"";
+    } else {
+      out << " \"F.Cu\"";
+    }
+    if (via.layersTo >= 0 && via.layersTo < layers.count()) {
+      out << " \"" << layers[via.layersTo].name << "\"";
+    } else {
+      out << " \"B.Cu\"";
+    }
+    out << ")";
+
+    out << " (net " << via.netNumber << ")";
+
+    if (!via.uuid.empty()) {
+      out << " (uuid \"" << via.uuid << "\")";
+    }
+
+    out << ")\n";
+  }
+
+  // Write footprint definition (simplified)
+  static void writeFootprint(const KiCadFootprint& footprint, const LayerStructure& layers,
+                              std::ostream& out, int level) {
+    writeIndent(out, level);
+    out << "(footprint \"" << footprint.reference << "\"";
+
+    if (footprint.x != 0.0 || footprint.y != 0.0 || footprint.rotation != 0.0) {
+      out << " (at " << footprint.x << " " << footprint.y;
+      if (footprint.rotation != 0.0) {
+        out << " " << footprint.rotation;
+      }
+      out << ")";
+    }
+
+    // Layer
+    if (footprint.layer >= 0 && footprint.layer < layers.count()) {
+      out << " (layer \"" << layers[footprint.layer].name << "\")";
+    } else {
+      out << " (layer \"F.Cu\")";
+    }
+
+    // Reference text
+    if (!footprint.reference.empty()) {
+      out << "\n";
+      writeIndent(out, level + 1);
+      out << "(fp_text reference \"" << footprint.reference << "\" (at 0 0) (layer \"F.SilkS\"))";
+    }
+
+    // Value text
+    if (!footprint.value.empty()) {
+      out << "\n";
+      writeIndent(out, level + 1);
+      out << "(fp_text value \"" << footprint.value << "\" (at 0 0) (layer \"F.Fab\"))";
+    }
+
+    // UUID
+    if (!footprint.uuid.empty()) {
+      out << "\n";
+      writeIndent(out, level + 1);
+      out << "(uuid \"" << footprint.uuid << "\")";
+    }
+
+    out << ")\n";
   }
 };
 

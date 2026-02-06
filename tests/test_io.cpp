@@ -349,3 +349,150 @@ TEST_CASE("KiCad PCB round-trip", "[io][kicad][roundtrip]") {
     REQUIRE(output.find("\"B.Cu\"") != std::string::npos);
   }
 }
+
+TEST_CASE("KiCad PCB with board items - segments", "[io][kicad][boarditems]") {
+  std::string pcbContent = R"(
+(kicad_pcb (version 20221018) (generator pcbnew)
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal))
+  (net 0 "")
+  (net 1 "GND")
+  (segment (start 10.5 20.0) (end 30.5 20.0) (width 0.25) (layer "F.Cu") (net 1) (uuid "test-uuid-1"))
+  (segment (start 30.5 20.0) (end 30.5 40.0) (width 0.25) (layer "F.Cu") (net 1) (uuid "test-uuid-2"))
+)
+  )";
+
+  auto pcb = KiCadPcbReader::readFromString(pcbContent);
+  REQUIRE(pcb.has_value());
+  REQUIRE(pcb->segments.size() == 2);
+
+  // Check first segment
+  const auto& seg1 = pcb->segments[0];
+  REQUIRE(seg1.startX == 10.5);
+  REQUIRE(seg1.startY == 20.0);
+  REQUIRE(seg1.endX == 30.5);
+  REQUIRE(seg1.endY == 20.0);
+  REQUIRE(seg1.width == 0.25);
+  REQUIRE(seg1.layer == 0);  // F.Cu
+  REQUIRE(seg1.netNumber == 1);
+  REQUIRE(seg1.uuid == "test-uuid-1");
+
+  // Check second segment
+  const auto& seg2 = pcb->segments[1];
+  REQUIRE(seg2.startX == 30.5);
+  REQUIRE(seg2.endX == 30.5);
+  REQUIRE(seg2.endY == 40.0);
+}
+
+TEST_CASE("KiCad PCB with board items - vias", "[io][kicad][boarditems]") {
+  std::string pcbContent = R"(
+(kicad_pcb (version 20221018) (generator pcbnew)
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal))
+  (net 0 "")
+  (net 1 "GND")
+  (via (at 25.0 30.0) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net 1) (uuid "via-uuid-1"))
+)
+  )";
+
+  auto pcb = KiCadPcbReader::readFromString(pcbContent);
+  REQUIRE(pcb.has_value());
+  REQUIRE(pcb->vias.size() == 1);
+
+  const auto& via = pcb->vias[0];
+  REQUIRE(via.x == 25.0);
+  REQUIRE(via.y == 30.0);
+  REQUIRE(via.size == 0.8);
+  REQUIRE(via.drill == 0.4);
+  REQUIRE(via.layersFrom == 0);  // F.Cu
+  REQUIRE(via.layersTo == 1);    // B.Cu
+  REQUIRE(via.netNumber == 1);
+  REQUIRE(via.uuid == "via-uuid-1");
+}
+
+TEST_CASE("KiCad PCB with board items - footprints", "[io][kicad][boarditems]") {
+  std::string pcbContent = R"(
+(kicad_pcb (version 20221018) (generator pcbnew)
+  (general (thickness 1.6))
+  (paper "A4")
+  (layers
+    (0 "F.Cu" signal))
+  (footprint "Resistor_SMD:R_0805" (at 50.0 50.0 90.0) (layer "F.Cu")
+    (fp_text reference "R1" (at 0 0) (layer "F.SilkS"))
+    (fp_text value "10K" (at 0 0) (layer "F.Fab"))
+    (uuid "footprint-uuid-1"))
+)
+  )";
+
+  auto pcb = KiCadPcbReader::readFromString(pcbContent);
+  REQUIRE(pcb.has_value());
+  REQUIRE(pcb->footprints.size() == 1);
+
+  const auto& fp = pcb->footprints[0];
+  REQUIRE(fp.x == 50.0);
+  REQUIRE(fp.y == 50.0);
+  REQUIRE(fp.rotation == 90.0);
+  REQUIRE(fp.layer == 0);  // F.Cu
+  REQUIRE(fp.reference == "R1");
+  REQUIRE(fp.value == "10K");
+  REQUIRE(fp.uuid == "footprint-uuid-1");
+}
+
+TEST_CASE("KiCad PCB board items round-trip", "[io][kicad][boarditems][roundtrip]") {
+  // Create PCB with board items
+  KiCadPcb pcb;
+  pcb.version = KiCadVersion(20221018, "pcbnew");
+  pcb.paper = "A4";
+  pcb.layers = LayerStructure({Layer("F.Cu", true), Layer("B.Cu", true)});
+
+  Net net1("GND", 1, 1, nullptr);
+  pcb.nets.addNet(net1);
+
+  // Add segment
+  KiCadSegment seg;
+  seg.startX = 10.0;
+  seg.startY = 20.0;
+  seg.endX = 30.0;
+  seg.endY = 20.0;
+  seg.width = 0.25;
+  seg.layer = 0;
+  seg.netNumber = 1;
+  seg.uuid = "seg-1";
+  pcb.segments.push_back(seg);
+
+  // Add via
+  KiCadVia via;
+  via.x = 30.0;
+  via.y = 20.0;
+  via.size = 0.8;
+  via.drill = 0.4;
+  via.layersFrom = 0;
+  via.layersTo = 1;
+  via.netNumber = 1;
+  via.uuid = "via-1";
+  pcb.vias.push_back(via);
+
+  // Write to string
+  std::string output = KiCadPcbWriter::writeToString(pcb);
+
+  // Verify board items are written
+  REQUIRE(output.find("(segment") != std::string::npos);
+  REQUIRE(output.find("(start 10") != std::string::npos);
+  REQUIRE(output.find("(end 30") != std::string::npos);
+  REQUIRE(output.find("(via") != std::string::npos);
+  REQUIRE(output.find("(at 30") != std::string::npos);
+  REQUIRE(output.find("(size 0.8") != std::string::npos);  // Relaxed to match formatted output
+  REQUIRE(output.find("(drill 0.4") != std::string::npos);
+
+  // Read back and verify
+  auto pcbRead = KiCadPcbReader::readFromString(output);
+  REQUIRE(pcbRead.has_value());
+  REQUIRE(pcbRead->segments.size() == 1);
+  REQUIRE(pcbRead->vias.size() == 1);
+}

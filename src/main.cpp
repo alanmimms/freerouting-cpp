@@ -134,6 +134,9 @@ int main(int argc, const char* argv[]) {
     log(args.verbosity, 2, "  PCB version: " + std::to_string(pcb.version.version));
     log(args.verbosity, 2, "  Layer count: " + std::to_string(pcb.layers.count()));
     log(args.verbosity, 2, "  Net count: " + std::to_string(pcb.nets.count()));
+    log(args.verbosity, 2, "  Segments: " + std::to_string(pcb.segments.size()));
+    log(args.verbosity, 2, "  Vias: " + std::to_string(pcb.vias.size()));
+    log(args.verbosity, 2, "  Footprints: " + std::to_string(pcb.footprints.size()));
 
     log(args.verbosity, 1, "Input loaded successfully");
 

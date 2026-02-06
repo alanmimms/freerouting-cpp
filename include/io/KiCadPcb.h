@@ -43,9 +43,38 @@ struct KiCadSetup {
       solder_paste_ratio(-0.0) {}
 };
 
+// Trace segment from KiCad PCB file
+struct KiCadSegment {
+  double startX, startY;
+  double endX, endY;
+  double width;
+  int layer;
+  int netNumber;
+  std::string uuid;
+};
+
+// Via from KiCad PCB file
+struct KiCadVia {
+  double x, y;
+  double size;         // Outer diameter
+  double drill;        // Drill diameter
+  int layersFrom, layersTo;
+  int netNumber;
+  std::string uuid;
+};
+
+// Footprint/module from KiCad PCB file
+struct KiCadFootprint {
+  std::string reference;
+  std::string value;
+  double x, y, rotation;
+  int layer;
+  std::string uuid;
+  // Simplified - full footprint parsing in future phases
+};
+
 // Complete KiCad PCB file representation
-// This is Phase 3 version - basic metadata only
-// Full board items (segments, vias, pads, etc.) will be added in later phases
+// Extended to include board items for routing
 class KiCadPcb {
 public:
   KiCadPcb() = default;
@@ -72,8 +101,12 @@ public:
   // Full NetClass integration requires clearance matrix setup
   std::vector<std::string> netClassNames;
 
-  // Board outline coordinates (simplified for Phase 3)
-  // Full polygon support in later phases
+  // Board items
+  std::vector<KiCadSegment> segments;
+  std::vector<KiCadVia> vias;
+  std::vector<KiCadFootprint> footprints;
+
+  // Board outline coordinates (simplified)
   struct BoardOutline {
     double minX, minY, maxX, maxY;
     BoardOutline() : minX(0), minY(0), maxX(100), maxY(100) {}

@@ -162,7 +162,7 @@ freerouting-cpp/
 | Spatial Indexing | ✅ Complete | Grid-based with O(n log n) queries |
 | Rule Area Support | ✅ Complete | Honors KiCad keepouts with shape-based containment |
 | Union-Find | ✅ Complete | Connectivity tracking |
-| KiCad I/O | ✅ Complete | S-expression parser, read/write .kicad_pcb metadata |
+| KiCad I/O | ✅ Complete | S-expression parser, read/write .kicad_pcb with board items |
 | Shape Geometry | ✅ Complete | Circle, ConvexPolygon, PolyLine, ComplexPolygon |
 
 ## Testing
@@ -182,8 +182,8 @@ The project includes comprehensive test coverage:
 
 ### Test Statistics
 
-- **242** test cases
-- **1154** assertions
+- **246** test cases
+- **1196** assertions
 - **100%** pass rate
 - Coverage across all major components
 

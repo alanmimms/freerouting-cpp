@@ -293,10 +293,11 @@ int DrcEngine::getRequiredClearance(Item* item1, Item* item2) const {
   // Get clearance from the clearance matrix
   const auto& matrix = board_->getClearanceMatrix();
 
-  // For now, use default clearance class (0)
-  // In a full implementation, items would have clearance class IDs
-  int clearanceClass1 = 0;
-  int clearanceClass2 = 0;
+  // Use default clearance class (1 = "default")
+  // Class 0 = "null" is not initialized by setDefaultValue()
+  // In a full implementation, items would have their own clearance class IDs
+  int clearanceClass1 = 1;
+  int clearanceClass2 = 1;
 
   // Get clearance value for the first common layer
   int layer = item1->firstLayer();

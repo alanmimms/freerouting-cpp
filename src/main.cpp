@@ -3,6 +3,8 @@
 #include "io/KiCadPcbReader.h"
 #include "io/KiCadPcbWriter.h"
 #include "io/KiCadBoardConverter.h"
+#include "io/DsnReader.h"
+#include "io/DsnBoardConverter.h"
 #include "board/RoutingBoard.h"
 #include "board/RouteOptimizer.h"
 #include "board/DrcEngine.h"
@@ -11,6 +13,7 @@
 #include <fstream>
 #include <thread>
 #include <filesystem>
+#include <algorithm>
 
 using namespace freerouting;
 
@@ -29,11 +32,24 @@ void log(int verbosity, int minLevel, const std::string& message) {
   }
 }
 
+// Check if file is DSN format (by extension)
+bool isDsnFile(const std::string& filename) {
+  std::string lower = filename;
+  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  return lower.ends_with(".dsn");
+}
+
 // Generate default output filename from input filename
 std::string generateOutputFilename(const std::string& inputFile) {
   std::filesystem::path inputPath(inputFile);
   std::string stem = inputPath.stem().string();
   std::string ext = inputPath.extension().string();
+
+  // DSN files output to .kicad_pcb format
+  if (isDsnFile(inputFile)) {
+    ext = ".kicad_pcb";
+  }
+
   std::string outputName = stem + "_routed" + ext;
 
   if (inputPath.has_parent_path()) {
@@ -119,36 +135,74 @@ int main(int argc, const char* argv[]) {
   // ========================================================================
 
   try {
-    // Step 1: Load input file
+    // Step 1: Load input file and convert to routing board
     log(args.verbosity, 1, "Loading input file...");
 
-    log(args.verbosity, 2, "  Parsing PCB structure...");
-    auto pcbOpt = KiCadPcbReader::readFromFile(args.inputFile);
+    std::unique_ptr<RoutingBoard> board;
+    ClearanceMatrix clearanceMatrix = ClearanceMatrix::createDefault(LayerStructure({Layer("F.Cu", true)}), 2000);
+    std::optional<KiCadPcb> pcbOpt;  // Keep KiCad data for output
 
-    if (!pcbOpt.has_value()) {
-      std::cerr << "Error: Failed to parse PCB file" << std::endl;
-      return kErrorInput;
+    // Detect file format and load accordingly
+    if (isDsnFile(args.inputFile)) {
+      // DSN format
+      log(args.verbosity, 2, "  Parsing DSN file...");
+      auto dsnOpt = DsnReader::readFromFile(args.inputFile);
+
+      if (!dsnOpt.has_value()) {
+        std::cerr << "Error: Failed to parse DSN file" << std::endl;
+        return kErrorInput;
+      }
+
+      const DsnDesign& dsn = *dsnOpt;
+
+      log(args.verbosity, 2, "  DSN design: " + dsn.name);
+      log(args.verbosity, 2, "  Layer count: " + std::to_string(dsn.structure.layers.size()));
+      log(args.verbosity, 2, "  Net count: " + std::to_string(dsn.network.nets.size()));
+      log(args.verbosity, 2, "  Images: " + std::to_string(dsn.library.images.size()));
+      log(args.verbosity, 2, "  Components: " + std::to_string(dsn.placement.components.size()));
+      log(args.verbosity, 2, "  Vias: " + std::to_string(dsn.wiring.vias.size()));
+      log(args.verbosity, 2, "  Wires: " + std::to_string(dsn.wiring.wires.size()));
+
+      log(args.verbosity, 1, "Input loaded successfully");
+
+      // Convert DSN to RoutingBoard
+      log(args.verbosity, 1, "Converting to routing board...");
+      auto [dsnBoard, dsnClearance] = DsnBoardConverter::createRoutingBoard(dsn);
+      board = std::move(dsnBoard);
+      clearanceMatrix = dsnClearance;
+
+    } else {
+      // KiCad format
+      log(args.verbosity, 2, "  Parsing KiCad PCB file...");
+      pcbOpt = KiCadPcbReader::readFromFile(args.inputFile);
+
+      if (!pcbOpt.has_value()) {
+        std::cerr << "Error: Failed to parse PCB file" << std::endl;
+        return kErrorInput;
+      }
+
+      KiCadPcb& pcb = *pcbOpt;
+
+      if (!pcb.isValid()) {
+        std::cerr << "Error: Invalid PCB structure (missing layers or paper size)" << std::endl;
+        return kErrorInput;
+      }
+
+      log(args.verbosity, 2, "  PCB version: " + std::to_string(pcb.version.version));
+      log(args.verbosity, 2, "  Layer count: " + std::to_string(pcb.layers.count()));
+      log(args.verbosity, 2, "  Net count: " + std::to_string(pcb.nets.count()));
+      log(args.verbosity, 2, "  Segments: " + std::to_string(pcb.segments.size()));
+      log(args.verbosity, 2, "  Vias: " + std::to_string(pcb.vias.size()));
+      log(args.verbosity, 2, "  Footprints: " + std::to_string(pcb.footprints.size()));
+
+      log(args.verbosity, 1, "Input loaded successfully");
+
+      // Convert KiCad data to RoutingBoard
+      log(args.verbosity, 1, "Converting to routing board...");
+      auto [kicadBoard, kicadClearance] = KiCadBoardConverter::createRoutingBoard(pcb);
+      board = std::move(kicadBoard);
+      clearanceMatrix = *kicadClearance;
     }
-
-    KiCadPcb& pcb = *pcbOpt;
-
-    if (!pcb.isValid()) {
-      std::cerr << "Error: Invalid PCB structure (missing layers or paper size)" << std::endl;
-      return kErrorInput;
-    }
-
-    log(args.verbosity, 2, "  PCB version: " + std::to_string(pcb.version.version));
-    log(args.verbosity, 2, "  Layer count: " + std::to_string(pcb.layers.count()));
-    log(args.verbosity, 2, "  Net count: " + std::to_string(pcb.nets.count()));
-    log(args.verbosity, 2, "  Segments: " + std::to_string(pcb.segments.size()));
-    log(args.verbosity, 2, "  Vias: " + std::to_string(pcb.vias.size()));
-    log(args.verbosity, 2, "  Footprints: " + std::to_string(pcb.footprints.size()));
-
-    log(args.verbosity, 1, "Input loaded successfully");
-
-    // Step 1.5: Convert KiCad data to RoutingBoard
-    log(args.verbosity, 1, "Converting to routing board...");
-    auto [board, clearanceMatrix] = KiCadBoardConverter::createRoutingBoard(pcb);
 
     if (!board) {
       std::cerr << "Error: Failed to create routing board" << std::endl;
@@ -268,17 +322,38 @@ int main(int argc, const char* argv[]) {
       }
     }
 
-    // Step 5: Convert routing board back to KiCad format
+    // Step 5: Convert routing board back to KiCad format and write output
     log(args.verbosity, 1, "Converting routing results...");
-    KiCadBoardConverter::updateKiCadPcbFromBoard(pcb, *board);
 
-    log(args.verbosity, 2, "  Output segments: " + std::to_string(pcb.segments.size()));
-    log(args.verbosity, 2, "  Output vias: " + std::to_string(pcb.vias.size()));
+    // For DSN files, need to create a minimal KiCad PCB from board
+    if (!pcbOpt.has_value()) {
+      // Create minimal KiCad PCB structure from board
+      pcbOpt = KiCadPcb();
+      KiCadPcb& pcb = *pcbOpt;
+
+      // Set basic properties
+      pcb.version = KiCadVersion(20221018, "freerouting-cpp");  // KiCad 7.0 format
+      pcb.layers = board->getLayers();
+      if (board->getNets()) {
+        pcb.nets = *board->getNets();
+      }
+      pcb.general.thickness = 1.6;  // Default 1.6mm
+      pcb.paper = "A4";
+
+      // Update with routing results
+      KiCadBoardConverter::updateKiCadPcbFromBoard(pcb, *board);
+    } else {
+      // Update existing KiCad PCB with routing results
+      KiCadBoardConverter::updateKiCadPcbFromBoard(*pcbOpt, *board);
+    }
+
+    log(args.verbosity, 2, "  Output segments: " + std::to_string(pcbOpt->segments.size()));
+    log(args.verbosity, 2, "  Output vias: " + std::to_string(pcbOpt->vias.size()));
 
     // Step 6: Write output file
     log(args.verbosity, 1, "Writing output file...");
 
-    if (!KiCadPcbWriter::writeToFile(pcb, args.outputFile)) {
+    if (!KiCadPcbWriter::writeToFile(*pcbOpt, args.outputFile)) {
       std::cerr << "Error: Failed to write output file" << std::endl;
       return kErrorOutput;
     }

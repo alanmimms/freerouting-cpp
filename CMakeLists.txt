@@ -42,6 +42,8 @@ add_library(freerouting
   src/autoroute/BatchAutorouter.cpp
   src/board/DrcEngine.cpp
   src/cli/CommandLineArgs.cpp
+  src/io/DsnReader.cpp
+  src/io/DsnBoardConverter.cpp
 )
 target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR})
 target_link_libraries(freerouting PUBLIC pthread)

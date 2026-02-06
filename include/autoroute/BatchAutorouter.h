@@ -92,8 +92,9 @@ private:
     const std::vector<Item*>& fromSet,
     const std::vector<Item*>& toSet) const;
 
-  // Get items that need routing
-  std::vector<Item*> getAutorouteItems();
+  // Get IDs of items that need routing (using IDs instead of pointers
+  // to avoid invalidation when items_ vector is reallocated)
+  std::vector<int> getAutorouteItemIds();
 
   // Clean up trace tails and unconnected vias
   void removeTails();

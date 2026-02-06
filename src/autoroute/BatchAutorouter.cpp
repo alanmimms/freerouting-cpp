@@ -35,10 +35,10 @@ bool BatchAutorouter::runBatchLoop(Stoppable* stoppableThread) {
 bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) {
   this->stoppable = stoppableThread;
 
-  // Get items that need routing
-  std::vector<Item*> itemsToRoute = getAutorouteItems();
+  // Get IDs of items that need routing
+  std::vector<int> itemIdsToRoute = getAutorouteItemIds();
 
-  if (itemsToRoute.empty()) {
+  if (itemIdsToRoute.empty()) {
     // Board is completely routed
     lastPassStats.passNumber = passNumber;
     lastPassStats.itemsQueued = 0;
@@ -54,7 +54,7 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
 
   // Initialize pass statistics
   lastPassStats.passNumber = passNumber;
-  lastPassStats.itemsQueued = static_cast<int>(itemsToRoute.size());
+  lastPassStats.itemsQueued = static_cast<int>(itemIdsToRoute.size());
   lastPassStats.itemsRouted = 0;
   lastPassStats.itemsFailed = 0;
   lastPassStats.itemsSkipped = 0;
@@ -62,17 +62,25 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
 
   if (progressDisplay) {
     progressDisplay->startPass(passNumber);
-    progressDisplay->message("Items to route: " + std::to_string(itemsToRoute.size()));
+    progressDisplay->message("Items to route: " + std::to_string(itemIdsToRoute.size()));
   }
 
-  // Route each item
-  for (Item* item : itemsToRoute) {
+  // Route each item (looked up by ID to avoid pointer invalidation)
+  for (int itemId : itemIdsToRoute) {
     if (stoppable && stoppable->isStopRequested()) {
       break;
     }
 
+    // Look up item by ID (safe even if items_ vector has been reallocated)
+    Item* item = board->getItem(itemId);
+    if (!item) {
+      // Item may have been removed/merged during routing - skip it
+      ++lastPassStats.itemsSkipped;
+      continue;
+    }
+
     // Get nets for this item
-    std::vector<int> nets = item->getNets();
+    const std::vector<int>& nets = item->getNets();
     for (int netNo : nets) {
       if (stoppable && stoppable->isStopRequested()) {
         break;
@@ -141,28 +149,44 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   const auto& connections = board->getIncompleteConnections();
 
   bool foundConnection = false;
-  Item* targetItem = nullptr;
+  int targetItemId = -1;
 
   // Find first unrouted connection involving this item and net
+  // Compare by ID since vector reallocation may have invalidated connection pointers
+  int itemId = item->getId();
   for (const auto& conn : connections) {
     if (conn.isRouted()) continue;
     if (conn.getNetNumber() != netNo) continue;
 
-    if (conn.getFromItem() == item) {
-      targetItem = conn.getToItem();
-      foundConnection = true;
-      break;
+    Item* connFrom = conn.getFromItem();
+    Item* connTo = conn.getToItem();
+
+    if (connFrom && connFrom->getId() == itemId) {
+      if (connTo) {
+        targetItemId = connTo->getId();
+        foundConnection = true;
+        break;
+      }
     }
-    if (conn.getToItem() == item) {
-      targetItem = conn.getFromItem();
-      foundConnection = true;
-      break;
+    if (connTo && connTo->getId() == itemId) {
+      if (connFrom) {
+        targetItemId = connFrom->getId();
+        foundConnection = true;
+        break;
+      }
     }
   }
 
-  if (!foundConnection || !targetItem) {
+  if (!foundConnection || targetItemId < 0) {
     return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
       "No unrouted connection found");
+  }
+
+  // Look up target item by ID (safe even after vector reallocation)
+  Item* targetItem = board->getItem(targetItemId);
+  if (!targetItem) {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed,
+      "Target item no longer exists");
   }
 
   // Use AutorouteEngine for pathfinding with obstacle avoidance
@@ -219,8 +243,8 @@ double BatchAutorouter::calculateAirlineDistance(
   return 0.0;
 }
 
-std::vector<Item*> BatchAutorouter::getAutorouteItems() {
-  std::vector<Item*> result;
+std::vector<int> BatchAutorouter::getAutorouteItemIds() {
+  std::vector<int> result;
 
   if (!board) {
     return result;
@@ -229,20 +253,24 @@ std::vector<Item*> BatchAutorouter::getAutorouteItems() {
   // Get incomplete connections from the board
   const auto& connections = board->getIncompleteConnections();
 
-  // Collect unique items from unrouted connections
-  std::set<Item*> uniqueItems;
+  // Collect unique item IDs from unrouted connections
+  std::set<int> uniqueItemIds;
   for (const auto& conn : connections) {
     if (!conn.isRouted()) {
       Item* fromItem = conn.getFromItem();
       Item* toItem = conn.getToItem();
 
-      if (fromItem) uniqueItems.insert(fromItem);
-      if (toItem) uniqueItems.insert(toItem);
+      if (fromItem) {
+        uniqueItemIds.insert(fromItem->getId());
+      }
+      if (toItem) {
+        uniqueItemIds.insert(toItem->getId());
+      }
     }
   }
 
   // Convert set to vector
-  result.assign(uniqueItems.begin(), uniqueItems.end());
+  result.assign(uniqueItemIds.begin(), uniqueItemIds.end());
 
   return result;
 }

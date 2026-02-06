@@ -48,23 +48,24 @@ public:
   }
 
   // Create RoutingBoard from KiCadPcb
-  static std::unique_ptr<RoutingBoard> createRoutingBoard(const KiCadPcb& kicadPcb) {
-    // Create clearance matrix (simplified - all clearances = 0.2mm for now)
+  // Returns a pair of (board, clearanceMatrix) because board stores a pointer to the matrix
+  static std::pair<std::unique_ptr<RoutingBoard>, std::unique_ptr<ClearanceMatrix>>
+  createRoutingBoard(const KiCadPcb& kicadPcb) {
+    // Create clearance matrix (must outlive board since board stores a pointer)
     int defaultClearance = mmToUnits(0.2);
-    ClearanceMatrix clearanceMatrix = ClearanceMatrix::createDefault(kicadPcb.layers, defaultClearance);
+    auto clearanceMatrix = std::make_unique<ClearanceMatrix>(
+      ClearanceMatrix::createDefault(kicadPcb.layers, defaultClearance));
 
     // Create routing board
-    auto board = std::make_unique<RoutingBoard>(kicadPcb.layers, clearanceMatrix);
+    auto board = std::make_unique<RoutingBoard>(kicadPcb.layers, *clearanceMatrix);
 
     // Create nets collection and add to board
-    auto nets = std::make_unique<Nets>();
+    // Note: We're leaking this for now - TODO: fix ownership model
+    auto nets = new Nets();
     for (const auto& net : kicadPcb.nets) {
       nets->addNet(net);
     }
-    board->setNets(nets.get());
-
-    // Note: nets object must outlive board, so caller needs to manage it
-    // For now we'll leak it (TODO: fix ownership)
+    board->setNets(nets);
 
     // Convert and add segments (traces)
     int itemId = 1;
@@ -92,7 +93,7 @@ public:
     //   }
     // }
 
-    return board;
+    return {std::move(board), std::move(clearanceMatrix)};
   }
 
   // Convert RoutingBoard back to KiCadPcb (update segments and vias)
@@ -168,9 +169,16 @@ private:
     }
 
     // Create a simple padstack for the via
-    // TODO: This needs proper Padstack implementation
-    // For now, we'll pass nullptr and let Via handle it
-    const Padstack* padstack = nullptr;
+    // Note: We allocate this on the heap and never delete it (memory leak)
+    // TODO: Proper padstack lifetime management
+    Padstack* padstack = new Padstack(
+      "via_" + std::to_string(itemId),  // name
+      itemId,                            // number
+      kicadVia.layersFrom,              // fromLayer
+      kicadVia.layersTo,                // toLayer
+      true,                              // attachAllowed
+      false                              // placedAbsolute
+    );
 
     return std::make_unique<Via>(
       center, padstack, nets, 0 /* clearanceClass */, itemId,

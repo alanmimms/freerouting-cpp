@@ -147,7 +147,7 @@ int main(int argc, const char* argv[]) {
 
     // Step 1.5: Convert KiCad data to RoutingBoard
     log(args.verbosity, 1, "Converting to routing board...");
-    auto board = KiCadBoardConverter::createRoutingBoard(pcb);
+    auto [board, clearanceMatrix] = KiCadBoardConverter::createRoutingBoard(pcb);
 
     if (!board) {
       std::cerr << "Error: Failed to create routing board" << std::endl;

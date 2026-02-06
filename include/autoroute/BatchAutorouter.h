@@ -7,6 +7,7 @@
 #include "datastructures/Stoppable.h"
 #include "datastructures/TimeLimit.h"
 #include "board/RoutingBoard.h"
+#include "cli/ProgressDisplay.h"
 #include <vector>
 #include <memory>
 
@@ -72,6 +73,11 @@ public:
     return lastPassStats;
   }
 
+  // Set progress display (optional)
+  void setProgressDisplay(ProgressDisplay* display) {
+    progressDisplay = display;
+  }
+
 private:
   // Route a single item on specific net
   AutorouteAttemptResult autorouteItem(
@@ -97,6 +103,7 @@ private:
   Stoppable* stoppable;
   int currentPass;
   PassStatistics lastPassStats;
+  ProgressDisplay* progressDisplay = nullptr;
 };
 
 } // namespace freerouting

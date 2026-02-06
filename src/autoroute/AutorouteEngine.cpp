@@ -145,26 +145,32 @@ AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
     (start.y + goal.y) / 2
   );
 
-  // Create via at midpoint
-  std::vector<int> nets{netNo};
-  int viaId = board->generateItemId();
+  // Check if a via already exists at this location
+  Via* existingVia = findViaAtLocation(viaLocation, netNo);
 
-  // Create padstack for via (simplified - fixed layers from/to)
-  Padstack* padstack = new Padstack(
-    "via_" + std::to_string(viaId),
-    viaId,
-    std::min(startLayer, destLayer),  // fromLayer
-    std::max(startLayer, destLayer),  // toLayer
-    true,   // attachAllowed
-    false   // placedAbsolute
-  );
+  // Only create a new via if one doesn't already exist
+  if (!existingVia) {
+    // Create via at midpoint
+    std::vector<int> nets{netNo};
+    int viaId = board->generateItemId();
 
-  auto via = std::make_unique<Via>(
-    viaLocation, padstack, nets, ctrl.viaClearanceClass, viaId,
-    FixedState::NotFixed, true /* attachAllowed */, board
-  );
+    // Create padstack for via (simplified - fixed layers from/to)
+    Padstack* padstack = new Padstack(
+      "via_" + std::to_string(viaId),
+      viaId,
+      std::min(startLayer, destLayer),  // fromLayer
+      std::max(startLayer, destLayer),  // toLayer
+      true,   // attachAllowed
+      false   // placedAbsolute
+    );
 
-  board->addItem(std::move(via));
+    auto via = std::make_unique<Via>(
+      viaLocation, padstack, nets, ctrl.viaClearanceClass, viaId,
+      FixedState::NotFixed, true /* attachAllowed */, board
+    );
+
+    board->addItem(std::move(via));
+  }
 
   // Route first segment: start -> via on startLayer
   PathFinder pathFinder(1000);
@@ -188,6 +194,29 @@ AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
   }
 
   return AutorouteResult::Routed;
+}
+
+// Helper: Find existing via at a location
+Via* AutorouteEngine::findViaAtLocation(IntPoint location, int netNo) const {
+  if (!board) return nullptr;
+
+  // Iterate through all items to find vias at the same location
+  for (const auto& itemPtr : board->getItems()) {
+    Via* via = dynamic_cast<Via*>(itemPtr.get());
+    if (!via) continue;
+
+    // Check if via is at the same location and on the same net
+    IntPoint viaCenter = via->getCenter();
+    if (viaCenter.x == location.x && viaCenter.y == location.y) {
+      // Check if via shares the net
+      const auto& viaNets = via->getNets();
+      if (std::find(viaNets.begin(), viaNets.end(), netNo) != viaNets.end()) {
+        return via;
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 bool AutorouteEngine::isStopRequested() const {

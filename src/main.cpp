@@ -1,4 +1,5 @@
 #include "cli/CommandLineArgs.h"
+#include "cli/ProgressDisplay.h"
 #include "io/KiCadPcbReader.h"
 #include "io/KiCadPcbWriter.h"
 #include "io/KiCadBoardConverter.h"
@@ -179,10 +180,22 @@ int main(int argc, const char* argv[]) {
     // Create and run batch autorouter
     BatchAutorouter autorouter(board.get(), config);
 
+    // Set up progress display if verbose output is enabled
+    ProgressDisplay progressDisplay(args.verbosity >= 1, true);
+    if (args.verbosity >= 1) {
+      progressDisplay.init(static_cast<int>(connectionCount), args.maxPasses);
+      autorouter.setProgressDisplay(&progressDisplay);
+    }
+
     log(args.verbosity, 2, "  Max passes: " + std::to_string(config.maxPasses));
 
     // Run routing (simplified - just run one pass for now)
     autorouter.autoroutePass(1, nullptr);
+
+    // Show routing summary
+    if (args.verbosity >= 1) {
+      progressDisplay.showSummary();
+    }
 
     log(args.verbosity, 1, "Routing completed");
     const auto& stats = autorouter.getLastPassStats();

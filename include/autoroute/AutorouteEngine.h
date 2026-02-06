@@ -14,6 +14,7 @@ namespace freerouting {
 
 // Forward declarations
 class Item;
+class Via;
 class ShapeSearchTree;
 
 // Temporary autoroute data stored on the RoutingBoard
@@ -116,6 +117,9 @@ private:
                                         const AutorouteControl& ctrl);
   AutorouteResult routeWithVia(IntPoint start, IntPoint goal, int startLayer, int destLayer,
                                 const AutorouteControl& ctrl);
+
+  // Find existing via at a location (returns nullptr if not found)
+  Via* findViaAtLocation(IntPoint location, int netNo) const;
 };
 
 } // namespace freerouting

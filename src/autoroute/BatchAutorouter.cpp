@@ -46,6 +46,9 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     lastPassStats.itemsFailed = 0;
     lastPassStats.itemsSkipped = 0;
     lastPassStats.incompleteConnections = 0;
+    if (progressDisplay) {
+      progressDisplay->message("All connections routed!", true);
+    }
     return false;
   }
 
@@ -56,6 +59,11 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
   lastPassStats.itemsFailed = 0;
   lastPassStats.itemsSkipped = 0;
   lastPassStats.itemsRipped = 0;
+
+  if (progressDisplay) {
+    progressDisplay->startPass(passNumber);
+    progressDisplay->message("Items to route: " + std::to_string(itemsToRoute.size()));
+  }
 
   // Route each item
   for (Item* item : itemsToRoute) {
@@ -81,6 +89,9 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
       switch (result.state) {
         case AutorouteAttemptState::Routed:
           ++lastPassStats.itemsRouted;
+          if (progressDisplay) {
+            progressDisplay->itemRouted("Net " + std::to_string(netNo));
+          }
           break;
 
         case AutorouteAttemptState::AlreadyConnected:
@@ -92,9 +103,19 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
 
         default:
           ++lastPassStats.itemsFailed;
+          if (progressDisplay) {
+            progressDisplay->itemFailed(result.details);
+          }
           break;
       }
     }
+  }
+
+  // Show progress summary for this pass
+  if (progressDisplay) {
+    progressDisplay->message("Pass complete: " +
+      std::to_string(lastPassStats.itemsRouted) + " routed, " +
+      std::to_string(lastPassStats.itemsFailed) + " failed", true);
   }
 
   // Clean up after pass

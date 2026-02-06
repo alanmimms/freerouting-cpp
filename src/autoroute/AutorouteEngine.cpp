@@ -54,31 +54,27 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   IntPoint goal((goalBox.ll.x + goalBox.ur.x) / 2,
                 (goalBox.ll.y + goalBox.ur.y) / 2);
 
-  // Determine routing layer (use first common layer, or start item's first layer)
-  int layer = startSet[0]->firstLayer();
-  for (Item* destItem : destSet) {
-    if (destItem->isOnLayer(layer)) {
-      break;  // Found common layer
+  // Determine start and destination layers
+  int startLayer = startSet[0]->firstLayer();
+  int destLayer = destSet[0]->firstLayer();
+
+  // Check if we need layer transition
+  bool needsVia = (startLayer != destLayer);
+
+  if (!needsVia) {
+    // Same layer routing - use simple pathfinding
+    PathFinder pathFinder(1000);  // 1000 unit grid = 0.1mm
+    auto pathResult = pathFinder.findPath(*board, start, goal, startLayer, netNo);
+
+    if (!pathResult.found || pathResult.points.size() < 2) {
+      return createDirectRoute(start, goal, startLayer, ctrl);
     }
-    // Try destination's first layer
-    int destLayer = destItem->firstLayer();
-    if (startSet[0]->isOnLayer(destLayer)) {
-      layer = destLayer;
-      break;
-    }
+
+    return createTracesFromPath(pathResult.points, startLayer, ctrl);
   }
 
-  // Use PathFinder for A* pathfinding with obstacle avoidance
-  PathFinder pathFinder(1000);  // 1000 unit grid resolution (0.1mm at 10000 units/mm)
-  auto pathResult = pathFinder.findPath(*board, start, goal, layer, netNo);
-
-  if (!pathResult.found || pathResult.points.size() < 2) {
-    // Pathfinding failed, try direct route as fallback
-    return createDirectRoute(start, goal, layer, ctrl);
-  }
-
-  // Create traces from the found path
-  return createTracesFromPath(pathResult.points, layer, ctrl);
+  // Multi-layer routing with via insertion
+  return routeWithVia(start, goal, startLayer, destLayer, ctrl);
 }
 
 // Helper: Create direct route (fallback when pathfinding fails)
@@ -133,6 +129,62 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createTracesFromPath(
     );
 
     board->addItem(std::move(trace));
+  }
+
+  return AutorouteResult::Routed;
+}
+
+// Helper: Route with via for layer changes
+AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
+    IntPoint start, IntPoint goal, int startLayer, int destLayer,
+    const AutorouteControl& ctrl) {
+
+  // Calculate via location (midpoint between start and goal)
+  IntPoint viaLocation(
+    (start.x + goal.x) / 2,
+    (start.y + goal.y) / 2
+  );
+
+  // Create via at midpoint
+  std::vector<int> nets{netNo};
+  int viaId = board->generateItemId();
+
+  // Create padstack for via (simplified - fixed layers from/to)
+  Padstack* padstack = new Padstack(
+    "via_" + std::to_string(viaId),
+    viaId,
+    std::min(startLayer, destLayer),  // fromLayer
+    std::max(startLayer, destLayer),  // toLayer
+    true,   // attachAllowed
+    false   // placedAbsolute
+  );
+
+  auto via = std::make_unique<Via>(
+    viaLocation, padstack, nets, ctrl.viaClearanceClass, viaId,
+    FixedState::NotFixed, true /* attachAllowed */, board
+  );
+
+  board->addItem(std::move(via));
+
+  // Route first segment: start -> via on startLayer
+  PathFinder pathFinder(1000);
+  auto path1 = pathFinder.findPath(*board, start, viaLocation, startLayer, netNo);
+
+  if (path1.found && path1.points.size() >= 2) {
+    createTracesFromPath(path1.points, startLayer, ctrl);
+  } else {
+    // Fallback to direct route
+    createDirectRoute(start, viaLocation, startLayer, ctrl);
+  }
+
+  // Route second segment: via -> goal on destLayer
+  auto path2 = pathFinder.findPath(*board, viaLocation, goal, destLayer, netNo);
+
+  if (path2.found && path2.points.size() >= 2) {
+    createTracesFromPath(path2.points, destLayer, ctrl);
+  } else {
+    // Fallback to direct route
+    createDirectRoute(viaLocation, goal, destLayer, ctrl);
   }
 
   return AutorouteResult::Routed;

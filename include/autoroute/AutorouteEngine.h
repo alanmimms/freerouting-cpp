@@ -114,6 +114,8 @@ private:
                                      const AutorouteControl& ctrl);
   AutorouteResult createTracesFromPath(const std::vector<IntPoint>& points, int layer,
                                         const AutorouteControl& ctrl);
+  AutorouteResult routeWithVia(IntPoint start, IntPoint goal, int startLayer, int destLayer,
+                                const AutorouteControl& ctrl);
 };
 
 } // namespace freerouting

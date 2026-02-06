@@ -3,13 +3,13 @@
 
 #include "board/Item.h"
 #include "geometry/IntBox.h"
+#include "geometry/Shape.h"
+#include "geometry/ComplexPolygon.h"
 #include <vector>
 #include <string>
+#include <memory>
 
 namespace freerouting {
-
-// Forward declarations
-class Shape;
 
 // Represents a rule area (keepout zone) on the board
 // Rule areas restrict where traces, vias, and copper pours can be placed
@@ -75,12 +75,27 @@ public:
     return containsNet(netNo);
   }
 
+  // Set the area shape
+  void setShape(std::unique_ptr<Shape> shape) {
+    areaShape = std::move(shape);
+  }
+
+  // Set area shape from polygon
+  void setPolygon(const ComplexPolygon& polygon) {
+    areaShape = std::make_unique<ComplexPolygon>(polygon);
+  }
+
+  // Get area shape
+  const Shape* getShape() const {
+    return areaShape.get();
+  }
+
   // Check if a point is inside this rule area
-  // (Stub - requires actual shape geometry)
   bool contains(IntPoint point) const {
-    (void)point;
-    // TODO: Implement when shape geometry is available
-    return false;
+    if (!areaShape) {
+      return false;
+    }
+    return areaShape->contains(point);
   }
 
   // Rule areas are obstacles based on restriction type
@@ -93,8 +108,10 @@ public:
 
   // Get bounding box
   IntBox getBoundingBox() const override {
-    // TODO: Calculate from actual area shape
-    return IntBox();
+    if (!areaShape) {
+      return IntBox();
+    }
+    return areaShape->getBoundingBox();
   }
 
   // Get first layer
@@ -125,8 +142,7 @@ private:
   bool allowTraces;
   bool allowVias;
   bool allowCopperPour;
-  // TODO: Add area shape when Shape hierarchy is complete
-  // Shape* areaShape;
+  std::unique_ptr<Shape> areaShape;
 };
 
 } // namespace freerouting

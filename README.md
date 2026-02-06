@@ -132,6 +132,7 @@ freerouting-cpp/
 ### Completed Phases ✅
 
 - [x] **Phase 3**: KiCad S-Expression I/O
+- [x] **Phase 5**: Full Geometry & Shape Integration
 - [x] **Phase 7**: Expansion Room System
 - [x] **Phase 8**: Maze Search Engine
 - [x] **Phase 9**: Batch Autorouter
@@ -145,7 +146,6 @@ freerouting-cpp/
 
 ### Remaining Work 🔧
 
-- [ ] **Phase 5**: Full Geometry & Shape Integration
 - [ ] **Phase 15**: GUI/Visualization (optional)
 - [ ] **Segment/Via/Pad Parsing**: Add board item parsing to KiCad I/O
 - [ ] **Full Integration**: Connect autorouter with loaded board items
@@ -160,10 +160,10 @@ freerouting-cpp/
 | DRC Engine | ✅ Complete | Clearance, net conflicts, rule areas |
 | Route Optimization | ✅ Complete | Trace merging and straightening |
 | Spatial Indexing | ✅ Complete | Grid-based with O(n log n) queries |
-| Rule Area Support | ✅ Complete | Honors KiCad keepouts |
+| Rule Area Support | ✅ Complete | Honors KiCad keepouts with shape-based containment |
 | Union-Find | ✅ Complete | Connectivity tracking |
 | KiCad I/O | ✅ Complete | S-expression parser, read/write .kicad_pcb metadata |
-| Shape Geometry | 🔧 Partial | Basic shapes, full integration pending |
+| Shape Geometry | ✅ Complete | Circle, ConvexPolygon, PolyLine, ComplexPolygon |
 
 ## Testing
 
@@ -182,8 +182,8 @@ The project includes comprehensive test coverage:
 
 ### Test Statistics
 
-- **222** test cases
-- **1074** assertions
+- **242** test cases
+- **1154** assertions
 - **100%** pass rate
 - Coverage across all major components
 
@@ -261,4 +261,4 @@ For bugs, feature requests, or questions, please open an issue on GitHub.
 
 ---
 
-**Status**: Active development - Phases 3, 7-14, and 16 complete. Core routing engine and KiCad I/O functional.
+**Status**: Active development - Phases 3, 5, 7-14, and 16 complete. Core routing engine, geometry system, and KiCad I/O functional.

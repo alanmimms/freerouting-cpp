@@ -3,13 +3,13 @@
 
 #include "board/Item.h"
 #include "geometry/IntBox.h"
+#include "geometry/Shape.h"
+#include "geometry/ComplexPolygon.h"
 #include <vector>
 #include <string>
+#include <memory>
 
 namespace freerouting {
-
-// Forward declarations
-class Shape;
 
 // Represents a conductive area (copper pour, plane) on the board
 // Can be electrically connected to traces and vias
@@ -29,6 +29,29 @@ public:
   // Get area name
   const std::string& getName() const { return name; }
 
+  // Set the area shape
+  void setShape(std::unique_ptr<Shape> shape) {
+    areaShape = std::move(shape);
+  }
+
+  // Set area shape from polygon
+  void setPolygon(const ComplexPolygon& polygon) {
+    areaShape = std::make_unique<ComplexPolygon>(polygon);
+  }
+
+  // Get area shape
+  const Shape* getShape() const {
+    return areaShape.get();
+  }
+
+  // Check if point is inside this area
+  bool contains(IntPoint point) const {
+    if (!areaShape) {
+      return false;
+    }
+    return areaShape->contains(point);
+  }
+
   // Check if this area is an obstacle to other items
   bool isObstacle(const Item& other) const override {
     if (!isObstacleFlag) {
@@ -45,8 +68,10 @@ public:
 
   // Get bounding box
   IntBox getBoundingBox() const override {
-    // TODO: Calculate from actual area shape
-    return IntBox();
+    if (!areaShape) {
+      return IntBox();
+    }
+    return areaShape->getBoundingBox();
   }
 
   // Get first layer
@@ -85,8 +110,7 @@ private:
   int layer;
   std::string name;
   bool isObstacleFlag;
-  // TODO: Add area shape when Shape hierarchy is complete
-  // Shape* areaShape;
+  std::unique_ptr<Shape> areaShape;
 };
 
 } // namespace freerouting

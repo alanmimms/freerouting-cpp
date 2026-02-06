@@ -80,6 +80,7 @@ add_executable(freerouting_tests
   tests/test_drc.cpp
   tests/test_data_structures.cpp
   tests/test_interactive_routing.cpp
+  tests/test_phase5_geometry.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

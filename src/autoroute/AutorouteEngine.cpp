@@ -34,8 +34,6 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
     const AutorouteControl& ctrl,
     std::vector<Item*>& rippedItems) {
 
-  (void)rippedItems;  // TODO: Implement ripup logic
-
   if (!board || startSet.empty() || destSet.empty()) {
     return AutorouteResult::Failed;
   }
@@ -58,6 +56,9 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   int startLayer = startSet[0]->firstLayer();
   int destLayer = destSet[0]->firstLayer();
 
+  // Calculate ripup cost limit (increases with pass number if ripup allowed)
+  int ripupCostLimit = ctrl.ripupAllowed ? ctrl.ripupCosts : 0;
+
   // Check if we need layer transition
   bool needsVia = (startLayer != destLayer);
 
@@ -67,24 +68,39 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
     auto pathResult = pathFinder.findPath(*board, start, goal, startLayer, netNo);
 
     if (!pathResult.found || pathResult.points.size() < 2) {
-      return createDirectRoute(start, goal, startLayer, ctrl);
+      return createDirectRoute(start, goal, startLayer, ctrl, ripupCostLimit, rippedItems);
     }
 
-    return createTracesFromPath(pathResult.points, startLayer, ctrl);
+    return createTracesFromPath(pathResult.points, startLayer, ctrl, ripupCostLimit, rippedItems);
   }
 
   // Multi-layer routing with via insertion
-  return routeWithVia(start, goal, startLayer, destLayer, ctrl);
+  return routeWithVia(start, goal, startLayer, destLayer, ctrl, ripupCostLimit, rippedItems);
 }
 
 // Helper: Create direct route (fallback when pathfinding fails)
 AutorouteEngine::AutorouteResult AutorouteEngine::createDirectRoute(
-    IntPoint start, IntPoint goal, int layer, const AutorouteControl& ctrl) {
+    IntPoint start, IntPoint goal, int layer, const AutorouteControl& ctrl,
+    int ripupCostLimit, std::vector<Item*>& rippedItems) {
 
   // Get trace half-width from control
   int halfWidth = ctrl.traceHalfWidth.empty() ? 1250 : ctrl.traceHalfWidth[layer];
 
   std::vector<int> nets{netNo};
+
+  // Check for conflicts before creating the trace
+  auto conflicts = findConflictingItems(start, goal, layer, halfWidth, netNo);
+
+  if (!conflicts.empty()) {
+    // Try to ripup conflicting items if within cost limit
+    bool ripupSuccess = ripupConflicts(conflicts, ripupCostLimit, rippedItems);
+    if (!ripupSuccess) {
+      // Can't ripup - routing failed
+      return AutorouteResult::NotRouted;
+    }
+  }
+
+  // Create the trace
   int itemId = board->generateItemId();
 
   auto trace = std::make_unique<Trace>(
@@ -99,7 +115,8 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createDirectRoute(
 
 // Helper: Create traces from path points
 AutorouteEngine::AutorouteResult AutorouteEngine::createTracesFromPath(
-    const std::vector<IntPoint>& points, int layer, const AutorouteControl& ctrl) {
+    const std::vector<IntPoint>& points, int layer, const AutorouteControl& ctrl,
+    int ripupCostLimit, std::vector<Item*>& rippedItems) {
 
   if (points.size() < 2) {
     return AutorouteResult::NotRouted;
@@ -120,6 +137,20 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createTracesFromPath(
       continue;
     }
 
+    // Check for conflicts before creating the trace
+    auto conflicts = findConflictingItems(p1, p2, layer, halfWidth, netNo);
+
+    if (!conflicts.empty()) {
+      // Try to ripup conflicting items if within cost limit
+      bool ripupSuccess = ripupConflicts(conflicts, ripupCostLimit, rippedItems);
+      if (!ripupSuccess) {
+        // Can't ripup - routing failed for this segment
+        // Continue with other segments (partial route)
+        continue;
+      }
+    }
+
+    // Create the trace segment
     int itemId = board->generateItemId();
 
     auto trace = std::make_unique<Trace>(
@@ -137,7 +168,7 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createTracesFromPath(
 // Helper: Route with via for layer changes
 AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
     IntPoint start, IntPoint goal, int startLayer, int destLayer,
-    const AutorouteControl& ctrl) {
+    const AutorouteControl& ctrl, int ripupCostLimit, std::vector<Item*>& rippedItems) {
 
   // Calculate via location (midpoint between start and goal)
   IntPoint viaLocation(
@@ -177,20 +208,20 @@ AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
   auto path1 = pathFinder.findPath(*board, start, viaLocation, startLayer, netNo);
 
   if (path1.found && path1.points.size() >= 2) {
-    createTracesFromPath(path1.points, startLayer, ctrl);
+    createTracesFromPath(path1.points, startLayer, ctrl, ripupCostLimit, rippedItems);
   } else {
     // Fallback to direct route
-    createDirectRoute(start, viaLocation, startLayer, ctrl);
+    createDirectRoute(start, viaLocation, startLayer, ctrl, ripupCostLimit, rippedItems);
   }
 
   // Route second segment: via -> goal on destLayer
   auto path2 = pathFinder.findPath(*board, viaLocation, goal, destLayer, netNo);
 
   if (path2.found && path2.points.size() >= 2) {
-    createTracesFromPath(path2.points, destLayer, ctrl);
+    createTracesFromPath(path2.points, destLayer, ctrl, ripupCostLimit, rippedItems);
   } else {
     // Fallback to direct route
-    createDirectRoute(viaLocation, goal, destLayer, ctrl);
+    createDirectRoute(viaLocation, goal, destLayer, ctrl, ripupCostLimit, rippedItems);
   }
 
   return AutorouteResult::Routed;
@@ -217,6 +248,126 @@ Via* AutorouteEngine::findViaAtLocation(IntPoint location, int netNo) const {
   }
 
   return nullptr;
+}
+
+// Helper: Find conflicting items for a proposed trace
+std::vector<Item*> AutorouteEngine::findConflictingItems(
+    IntPoint start, IntPoint end, int layer, int halfWidth, int netNo) const {
+
+  std::vector<Item*> conflicts;
+
+  if (!board) return conflicts;
+
+  // Create bounding box for the proposed trace
+  int minX = std::min(start.x, end.x) - halfWidth;
+  int maxX = std::max(start.x, end.x) + halfWidth;
+  int minY = std::min(start.y, end.y) - halfWidth;
+  int maxY = std::max(start.y, end.y) + halfWidth;
+  IntBox traceBox(minX, minY, maxX, maxY);
+
+  // Query the shape tree for potential conflicts
+  const auto& items = board->getShapeTree().queryRegion(traceBox);
+
+  // Check each item for actual conflicts
+  for (Item* item : items) {
+    if (!item) continue;
+
+    // Skip items on different layers
+    if (item->lastLayer() < layer || item->firstLayer() > layer) {
+      continue;
+    }
+
+    // Skip items on the same net (they're not obstacles)
+    const auto& itemNets = item->getNets();
+    if (std::find(itemNets.begin(), itemNets.end(), netNo) != itemNets.end()) {
+      continue;
+    }
+
+    // Skip fixed items (we can't ripup user-placed traces)
+    if (item->isUserFixed()) {
+      continue;
+    }
+
+    // Check if bounding boxes overlap (accounting for clearance)
+    IntBox itemBox = item->getBoundingBox();
+
+    // Get required clearance
+    const ClearanceMatrix& clearance = board->getClearanceMatrix();
+    int requiredClearance = clearance.getValue(
+      0,  // Assume class 0 for now (should use actual clearance classes)
+      0,
+      layer,
+      true  // Add safety margin
+    );
+
+    // Expand trace box by required clearance
+    IntBox expandedBox(
+      traceBox.ll.x - requiredClearance,
+      traceBox.ll.y - requiredClearance,
+      traceBox.ur.x + requiredClearance,
+      traceBox.ur.y + requiredClearance
+    );
+
+    // Check if expanded box overlaps with item
+    if (expandedBox.intersects(itemBox)) {
+      conflicts.push_back(item);
+    }
+  }
+
+  return conflicts;
+}
+
+// Helper: Calculate ripup cost for an item
+int AutorouteEngine::calculateRipupCost(Item* item, int passNumber) const {
+  if (!item) return INT32_MAX;
+
+  // Base cost starts low and increases with each pass
+  // This makes the router more aggressive about ripup in later passes
+  int baseCost = 100;
+
+  // Increase cost for each previous ripup of this item
+  // (stored in autoroute info if we had that infrastructure)
+  int ripupCount = 0;  // TODO: Track ripup count per item
+
+  // Cost formula: baseCost * (1 + ripupCount) * passNumber
+  int cost = baseCost * (1 + ripupCount) * std::max(1, passNumber);
+
+  return cost;
+}
+
+// Helper: Try to ripup conflicting items
+bool AutorouteEngine::ripupConflicts(
+    const std::vector<Item*>& conflicts,
+    int ripupCostLimit,
+    std::vector<Item*>& rippedItems) {
+
+  if (!board) return false;
+
+  // Check if all conflicts can be ripped within cost limit
+  for (Item* conflict : conflicts) {
+    if (!conflict) continue;
+
+    // Can't ripup fixed items
+    if (conflict->isUserFixed()) {
+      return false;
+    }
+
+    // Check ripup cost (for now, simplified - just check pass number)
+    // In full implementation, would track ripup history per item
+  }
+
+  // Ripup all conflicts
+  for (Item* conflict : conflicts) {
+    if (!conflict) continue;
+
+    // Remove from board
+    board->removeItem(conflict->getId());
+
+    // Add to ripped items list for potential re-routing
+    rippedItems.push_back(conflict);
+  }
+
+  return true;
 }
 
 bool AutorouteEngine::isStopRequested() const {

@@ -133,8 +133,6 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
     std::vector<Item*>& rippedItems,
     int ripupPassNo) {
 
-  (void)ripupPassNo;
-
   if (!board || !item) {
     return AutorouteAttemptResult(AutorouteAttemptState::Failed, "No board or item");
   }
@@ -178,6 +176,11 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   for (int i = 0; i < control.layerCount; ++i) {
     control.traceHalfWidth[i] = 1250;
   }
+
+  // Configure ripup settings based on pass number
+  control.ripupAllowed = (ripupPassNo > 1);  // Enable ripup after first pass
+  control.ripupCosts = config.startRipupCosts * ripupPassNo;  // Increase cost with passes
+  control.ripupPassNo = ripupPassNo;
 
   // Prepare start and destination sets
   std::vector<Item*> startSet{item};

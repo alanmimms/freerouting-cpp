@@ -112,14 +112,31 @@ private:
 
   // Helper methods for routing
   AutorouteResult createDirectRoute(IntPoint start, IntPoint goal, int layer,
-                                     const AutorouteControl& ctrl);
+                                     const AutorouteControl& ctrl,
+                                     int ripupCostLimit, std::vector<Item*>& rippedItems);
   AutorouteResult createTracesFromPath(const std::vector<IntPoint>& points, int layer,
-                                        const AutorouteControl& ctrl);
+                                        const AutorouteControl& ctrl,
+                                        int ripupCostLimit, std::vector<Item*>& rippedItems);
   AutorouteResult routeWithVia(IntPoint start, IntPoint goal, int startLayer, int destLayer,
-                                const AutorouteControl& ctrl);
+                                const AutorouteControl& ctrl,
+                                int ripupCostLimit, std::vector<Item*>& rippedItems);
 
   // Find existing via at a location (returns nullptr if not found)
   Via* findViaAtLocation(IntPoint location, int netNo) const;
+
+  // Check if a trace would conflict with existing items
+  // Returns list of conflicting items (obstacles)
+  std::vector<Item*> findConflictingItems(IntPoint start, IntPoint end,
+                                           int layer, int halfWidth, int netNo) const;
+
+  // Calculate ripup cost for an item based on pass number
+  int calculateRipupCost(Item* item, int passNumber) const;
+
+  // Try to ripup conflicting items and add them to rippedItems
+  // Returns true if ripup was successful (all conflicts can be ripped)
+  bool ripupConflicts(const std::vector<Item*>& conflicts,
+                      int ripupCostLimit,
+                      std::vector<Item*>& rippedItems);
 };
 
 } // namespace freerouting

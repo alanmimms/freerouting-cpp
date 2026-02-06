@@ -1,8 +1,10 @@
 #include "autoroute/BatchAutorouter.h"
 #include "autoroute/Connection.h"
 #include "board/Item.h"
+#include "board/Trace.h"
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace freerouting {
 
@@ -109,23 +111,78 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
     std::vector<Item*>& rippedItems,
     int ripupPassNo) {
 
-  (void)item;
-  (void)netNo;
   (void)rippedItems;
   (void)ripupPassNo;
 
-  // TODO: Full implementation requires:
-  // 1. Check if item already connected
-  // 2. Get connected/unconnected item sets
-  // 3. Calculate routing cost parameters
-  // 4. Initialize AutorouteEngine
-  // 5. Call AutorouteEngine::autorouteConnection()
-  // 6. Handle ripup of conflicting items
-  // 7. Optimize routed traces
+  if (!board || !item) {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed, "No board or item");
+  }
 
-  // Stub for now - returns "not routed"
-  return AutorouteAttemptResult(AutorouteAttemptState::Failed,
-    "Full autoroute implementation pending");
+  // Find incomplete connections for this item and net
+  const auto& connections = board->getIncompleteConnections();
+
+  bool foundConnection = false;
+  Item* targetItem = nullptr;
+
+  // Find first unrouted connection involving this item and net
+  for (const auto& conn : connections) {
+    if (conn.isRouted()) continue;
+    if (conn.getNetNumber() != netNo) continue;
+
+    if (conn.getFromItem() == item) {
+      targetItem = conn.getToItem();
+      foundConnection = true;
+      break;
+    }
+    if (conn.getToItem() == item) {
+      targetItem = conn.getFromItem();
+      foundConnection = true;
+      break;
+    }
+  }
+
+  if (!foundConnection || !targetItem) {
+    return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
+      "No unrouted connection found");
+  }
+
+  // Simple direct routing: create a trace between the two items
+  // This is a placeholder - full implementation would use maze search
+
+  // Get bounding box centers
+  IntBox fromBox = item->getBoundingBox();
+  IntBox toBox = targetItem->getBoundingBox();
+
+  IntPoint fromCenter((fromBox.ll.x + fromBox.ur.x) / 2,
+                      (fromBox.ll.y + fromBox.ur.y) / 2);
+  IntPoint toCenter((toBox.ll.x + toBox.ur.x) / 2,
+                    (toBox.ll.y + toBox.ur.y) / 2);
+
+  // Use first common layer, or first layer of either item
+  int layer = item->firstLayer();
+  if (!targetItem->isOnLayer(layer)) {
+    layer = targetItem->firstLayer();
+  }
+
+  // Create a simple trace (default 0.25mm = 2500 units at 10000 units/mm)
+  int halfWidth = 1250;  // 0.125mm half-width = 0.25mm full width
+
+  std::vector<int> nets{netNo};
+  int itemId = board->generateItemId();
+
+  auto trace = std::make_unique<Trace>(
+    fromCenter, toCenter, layer, halfWidth,
+    nets, 0 /* clearanceClass */, itemId,
+    FixedState::NotFixed, board
+  );
+
+  board->addItem(std::move(trace));
+
+  // Mark connection as routed
+  board->markConnectionRouted(item, targetItem, netNo);
+
+  return AutorouteAttemptResult(AutorouteAttemptState::Routed,
+    "Simple direct route created");
 }
 
 double BatchAutorouter::calculateAirlineDistance(
@@ -147,13 +204,28 @@ double BatchAutorouter::calculateAirlineDistance(
 std::vector<Item*> BatchAutorouter::getAutorouteItems() {
   std::vector<Item*> result;
 
-  // TODO: Full implementation requires:
-  // 1. Iterate all board items
-  // 2. Find items with incomplete connections
-  // 3. Filter by routable items (pins, vias, traces)
-  // 4. Return items that need routing
+  if (!board) {
+    return result;
+  }
 
-  // Stub for now - returns empty list
+  // Get incomplete connections from the board
+  const auto& connections = board->getIncompleteConnections();
+
+  // Collect unique items from unrouted connections
+  std::set<Item*> uniqueItems;
+  for (const auto& conn : connections) {
+    if (!conn.isRouted()) {
+      Item* fromItem = conn.getFromItem();
+      Item* toItem = conn.getToItem();
+
+      if (fromItem) uniqueItems.insert(fromItem);
+      if (toItem) uniqueItems.insert(toItem);
+    }
+  }
+
+  // Convert set to vector
+  result.assign(uniqueItems.begin(), uniqueItems.end());
+
   return result;
 }
 

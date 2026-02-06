@@ -157,6 +157,16 @@ int main(int argc, const char* argv[]) {
     log(args.verbosity, 2, "  Board items: " + std::to_string(board->itemCount()));
     log(args.verbosity, 1, "Routing board created");
 
+    // Step 1.75: Find incomplete connections (what needs routing)
+    log(args.verbosity, 1, "Analyzing connections...");
+    board->updateIncompleteConnections();
+    size_t connectionCount = board->incompleteConnectionCount();
+    log(args.verbosity, 2, "  Incomplete connections: " + std::to_string(connectionCount));
+
+    if (connectionCount == 0) {
+      log(args.verbosity, 1, "Board is already fully routed");
+    }
+
     // Step 2: Run autorouter
     log(args.verbosity, 1, "Starting autorouter...");
 

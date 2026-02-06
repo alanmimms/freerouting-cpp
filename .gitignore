@@ -52,6 +52,14 @@ cmake_install.cmake
 CTestTestfile.cmake
 _deps/
 Testing/
+DartConfiguration.tcl
+Makefile
+
+# Project executables (should only be in build/)
+freerouting-cli
+freerouting_tests
+*_include.cmake
+*_tests.cmake
 
 # IDE and editor files
 .vscode/

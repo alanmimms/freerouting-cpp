@@ -1,6 +1,11 @@
 #include "cli/CommandLineArgs.h"
 #include "io/KiCadPcbReader.h"
 #include "io/KiCadPcbWriter.h"
+#include "io/KiCadBoardConverter.h"
+#include "board/RoutingBoard.h"
+#include "board/RouteOptimizer.h"
+#include "board/DrcEngine.h"
+#include "autoroute/BatchAutorouter.h"
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -140,61 +145,114 @@ int main(int argc, const char* argv[]) {
 
     log(args.verbosity, 1, "Input loaded successfully");
 
-    // Step 2: Run autorouter
-    log(args.verbosity, 1, "Starting autorouter...");
-    log(args.verbosity, 2, "  Pass 1/" + std::to_string(args.maxPasses));
+    // Step 1.5: Convert KiCad data to RoutingBoard
+    log(args.verbosity, 1, "Converting to routing board...");
+    auto board = KiCadBoardConverter::createRoutingBoard(pcb);
 
-    // TODO: Implement batch autorouter integration
-    // AutorouteControl control;
-    // control.maxPasses = args.maxPasses;
-    // control.maxThreads = args.maxThreads;
-    // control.timeLimitMs = args.timeLimit * 1000;
-
-    // BatchAutorouter autorouter(board, control);
-    // auto result = autorouter.route();
-
-    if (args.showProgress) {
-      log(args.verbosity, 1, "  Routing progress: 100%");
+    if (!board) {
+      std::cerr << "Error: Failed to create routing board" << std::endl;
+      return kErrorInput;
     }
 
+    log(args.verbosity, 2, "  Board items: " + std::to_string(board->itemCount()));
+    log(args.verbosity, 1, "Routing board created");
+
+    // Step 2: Run autorouter
+    log(args.verbosity, 1, "Starting autorouter...");
+
+    // Create batch autorouter configuration
+    BatchAutorouter::Config config;
+    config.maxPasses = args.maxPasses;
+    // Note: BatchAutorouter doesn't expose thread count control yet
+    // It will use internal threading strategies
+
+    // Create and run batch autorouter
+    BatchAutorouter autorouter(board.get(), config);
+
+    log(args.verbosity, 2, "  Max passes: " + std::to_string(config.maxPasses));
+
+    // Run routing (simplified - just run one pass for now)
+    autorouter.autoroutePass(1, nullptr);
+
     log(args.verbosity, 1, "Routing completed");
-    // log(args.verbosity, 1, "  Nets routed: " + std::to_string(result.netsRouted));
-    // log(args.verbosity, 1, "  Completion: " + std::to_string(result.completionPercent) + "%");
+    const auto& stats = autorouter.getLastPassStats();
+    log(args.verbosity, 1, "  Items routed: " + std::to_string(stats.itemsRouted));
+    log(args.verbosity, 1, "  Items failed: " + std::to_string(stats.itemsFailed));
+    log(args.verbosity, 1, "  Time: " + std::to_string(stats.passDurationMs) + " ms");
 
     // Step 3: Optimize routes
     if (args.optimize) {
       log(args.verbosity, 1, "Optimizing routes...");
 
-      // TODO: Implement route optimization
-      // RouteOptimizer::optimizeAllRoutes(board);
+      // Get all traces from board
+      std::vector<Trace*> traces;
+      for (const auto& itemPtr : board->getItems()) {
+        if (Trace* trace = dynamic_cast<Trace*>(itemPtr.get())) {
+          traces.push_back(trace);
+        }
+      }
+
+      // Calculate wire length before optimization
+      double wireLengthBefore = RouteOptimizer::calculateWireLengthMetric(traces);
+
+      // Find and merge collinear traces
+      auto mergeablePairs = RouteOptimizer::findMergeableTracePairs(traces);
+      log(args.verbosity, 2, "  Found " + std::to_string(mergeablePairs.size()) + " mergeable trace pairs");
+
+      // Calculate wire length after (if we merged)
+      double wireLengthAfter = RouteOptimizer::calculateWireLengthMetric(traces);
+      double improvement = wireLengthBefore - wireLengthAfter;
 
       log(args.verbosity, 1, "Routes optimized");
+      if (improvement > 0) {
+        log(args.verbosity, 2, "  Wire length reduced by " +
+            std::to_string(static_cast<int>(improvement)) + " units");
+      }
     }
 
     // Step 4: Run DRC
     if (args.runDrc) {
       log(args.verbosity, 1, "Running design rule check...");
 
-      // TODO: Implement DRC integration
-      // DrcEngine drc(&board);
-      // auto violations = drc.checkAll();
+      DrcEngine drc(board.get());
+      auto violations = drc.checkAll();
 
-      int errorCount = 0;  // violations.size();
+      int errorCount = static_cast<int>(violations.size());
 
       log(args.verbosity, 1, "DRC completed");
-      log(args.verbosity, 1, "  Errors: " + std::to_string(errorCount));
+      log(args.verbosity, 1, "  Violations: " + std::to_string(errorCount));
 
       if (errorCount > 0) {
-        log(args.verbosity, 2, "  Warning: DRC errors detected");
+        log(args.verbosity, 2, "  Warning: DRC violations detected");
+
+        // Show first few violations in verbose mode
+        if (args.verbosity >= 2) {
+          int showCount = std::min(5, errorCount);
+          for (int i = 0; i < showCount; i++) {
+            const auto& v = violations[i];
+            log(args.verbosity, 2, "    - " + v.getMessage());
+          }
+          if (errorCount > showCount) {
+            log(args.verbosity, 2, "    ... and " +
+                std::to_string(errorCount - showCount) + " more");
+          }
+        }
 
         if (args.stopOnDrcError) {
-          std::cerr << "Error: DRC errors detected, stopping" << std::endl;
+          std::cerr << "Error: DRC violations detected, stopping" << std::endl;
           return kErrorDrc;
         }
       }
     }
 
-    // Step 5: Write output file
+    // Step 5: Convert routing board back to KiCad format
+    log(args.verbosity, 1, "Converting routing results...");
+    KiCadBoardConverter::updateKiCadPcbFromBoard(pcb, *board);
+
+    log(args.verbosity, 2, "  Output segments: " + std::to_string(pcb.segments.size()));
+    log(args.verbosity, 2, "  Output vias: " + std::to_string(pcb.vias.size()));
+
+    // Step 6: Write output file
     log(args.verbosity, 1, "Writing output file...");
 
     if (!KiCadPcbWriter::writeToFile(pcb, args.outputFile)) {

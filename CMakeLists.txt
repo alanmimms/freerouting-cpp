@@ -67,6 +67,7 @@ add_executable(freerouting_tests
   tests/test_expansion_rooms.cpp
   tests/test_maze_search.cpp
   tests/test_batch_autorouter.cpp
+  tests/test_board_extensions.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

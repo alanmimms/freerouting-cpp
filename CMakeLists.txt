@@ -52,6 +52,7 @@ add_executable(freerouting_tests
   tests/test_geometry.cpp
   tests/test_rules.cpp
   tests/test_io.cpp
+  tests/test_board.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

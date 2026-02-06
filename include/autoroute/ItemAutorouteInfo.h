@@ -14,7 +14,8 @@ public:
   ItemAutorouteInfo()
     : precalculatedConnection(nullptr),
       expansionDoor(nullptr),
-      expansionDoorCount(0) {}
+      expansionDoorCount(0),
+      isStart(false) {}
 
   // Get precalculated connection this item belongs to
   Connection* getPrecalculatedConnection() const {
@@ -51,17 +52,29 @@ public:
     ++expansionDoorCount;
   }
 
+  // Check if this item is a start item (vs destination)
+  bool isStartInfo() const {
+    return isStart;
+  }
+
+  // Set whether this is a start item
+  void setStartInfo(bool start) {
+    isStart = start;
+  }
+
   // Clear all routing info
   void clear() {
     precalculatedConnection = nullptr;
     expansionDoor = nullptr;
     expansionDoorCount = 0;
+    isStart = false;
   }
 
 private:
   Connection* precalculatedConnection;  // Cached connection for this item
   void* expansionDoor;                   // Expansion door for maze search
   int expansionDoorCount;                // Number of expansion doors
+  bool isStart;                          // True if this is a start item
 };
 
 } // namespace freerouting

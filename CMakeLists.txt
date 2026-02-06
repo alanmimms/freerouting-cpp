@@ -30,10 +30,15 @@ add_compile_options(
 set(FREEROUTING_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(FREEROUTING_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# Main library (header-only for now, will add sources as we implement)
-add_library(freerouting INTERFACE)
-target_include_directories(freerouting INTERFACE ${FREEROUTING_INCLUDE_DIR})
-target_link_libraries(freerouting INTERFACE pthread)
+# Main library
+add_library(freerouting
+  src/autoroute/ExpansionDoor.cpp
+  src/autoroute/FreeSpaceExpansionRoom.cpp
+  src/autoroute/CompleteFreeSpaceExpansionRoom.cpp
+  src/autoroute/TargetItemExpansionDoor.cpp
+)
+target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR})
+target_link_libraries(freerouting PUBLIC pthread)
 
 # Testing with Catch2
 enable_testing()
@@ -55,6 +60,7 @@ add_executable(freerouting_tests
   tests/test_board.cpp
   tests/test_shapes.cpp
   tests/test_routing.cpp
+  tests/test_expansion_rooms.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

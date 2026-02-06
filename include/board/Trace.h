@@ -110,6 +110,45 @@ public:
                      getClearanceClass(), newId, getFixedState(), getBoard());
   }
 
+  // Check if this trace can be merged with another
+  bool canMergeWith(const Trace& other) const {
+    // Must be on same layer
+    if (layer_ != other.layer_) {
+      return false;
+    }
+
+    // Must have same width
+    if (halfWidth_ != other.halfWidth_) {
+      return false;
+    }
+
+    // Must have same nets
+    if (getNets() != other.getNets()) {
+      return false;
+    }
+
+    // Must be collinear
+    if (!isCollinearWith(other)) {
+      return false;
+    }
+
+    // Must be connected (share an endpoint)
+    return start_ == other.start_ ||
+           start_ == other.end_ ||
+           end_ == other.start_ ||
+           end_ == other.end_;
+  }
+
+  // Check if this trace is collinear with another
+  bool isCollinearWith(const Trace& other) const {
+    // Check if all four endpoints are collinear
+    IntVector v1 = end_ - start_;
+    IntVector v2 = other.start_ - start_;
+    IntVector v3 = other.end_ - start_;
+
+    return v1.cross(v2) == 0 && v1.cross(v3) == 0;
+  }
+
 private:
   IntPoint start_;     // Start point
   IntPoint end_;       // End point

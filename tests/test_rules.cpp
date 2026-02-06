@@ -15,17 +15,17 @@ using namespace freerouting;
 TEST_CASE("Layer basic operations", "[rules][layer]") {
   SECTION("Layer construction") {
     Layer signal("F.Cu", true);
-    REQUIRE(signal.name == std::string_view("F.Cu"));
+    REQUIRE(signal.name == "F.Cu");
     REQUIRE(signal.isSignal == true);
 
     Layer power("GND", false);
-    REQUIRE(power.name == std::string_view("GND"));
+    REQUIRE(power.name == "GND");
     REQUIRE(power.isSignal == false);
   }
 
   SECTION("Default layer construction") {
     Layer layer;
-    REQUIRE(layer.name == std::string_view(""));
+    REQUIRE(layer.name == "");
     REQUIRE(layer.isSignal == false);
   }
 }
@@ -40,8 +40,8 @@ TEST_CASE("LayerStructure operations", "[rules][layerstructure]") {
     };
 
     REQUIRE(layers.count() == 4);
-    REQUIRE(layers[0].name == std::string_view("F.Cu"));
-    REQUIRE(layers[3].name == std::string_view("B.Cu"));
+    REQUIRE(layers[0].name == "F.Cu");
+    REQUIRE(layers[3].name == "B.Cu");
   }
 
   SECTION("Signal layer count") {
@@ -82,9 +82,9 @@ TEST_CASE("LayerStructure operations", "[rules][layerstructure]") {
     const Layer& sig1 = layers.getSignalLayer(1);
     const Layer& sig2 = layers.getSignalLayer(2);
 
-    REQUIRE(sig0.name == std::string_view("F.Cu"));
-    REQUIRE(sig1.name == std::string_view("In1.Cu"));
-    REQUIRE(sig2.name == std::string_view("B.Cu"));
+    REQUIRE(sig0.name == "F.Cu");
+    REQUIRE(sig1.name == "In1.Cu");
+    REQUIRE(sig2.name == "B.Cu");
   }
 
   SECTION("Signal layer number") {

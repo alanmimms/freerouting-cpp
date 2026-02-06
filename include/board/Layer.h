@@ -9,18 +9,23 @@ namespace freerouting {
 // Layers can be signal layers (for routing) or non-signal (e.g., power/ground planes)
 struct Layer {
   // Layer name (e.g., "F.Cu", "In1.Cu", "B.Cu")
-  const char* name;
+  // Using std::string to avoid lifetime issues
+  std::string name;
 
   // True if this is a signal layer that can be used for routing
   // False for power/ground planes or mechanical layers
   bool isSignal;
 
   // Constructor
-  constexpr Layer(const char* layerName, bool signal)
+  Layer(std::string layerName, bool signal)
+    : name(std::move(layerName)), isSignal(signal) {}
+
+  // Constructor from C string
+  Layer(const char* layerName, bool signal)
     : name(layerName), isSignal(signal) {}
 
   // Default constructor for empty layer
-  constexpr Layer() : name(""), isSignal(false) {}
+  Layer() : name(""), isSignal(false) {}
 };
 
 } // namespace freerouting

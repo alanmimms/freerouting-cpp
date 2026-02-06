@@ -1,5 +1,6 @@
 #include "autoroute/BatchAutorouter.h"
 #include "autoroute/Connection.h"
+#include "autoroute/AutorouteEngine.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include <algorithm>
@@ -111,7 +112,6 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
     std::vector<Item*>& rippedItems,
     int ripupPassNo) {
 
-  (void)rippedItems;
   (void)ripupPassNo;
 
   if (!board || !item) {
@@ -146,43 +146,37 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
       "No unrouted connection found");
   }
 
-  // Simple direct routing: create a trace between the two items
-  // This is a placeholder - full implementation would use maze search
+  // Use AutorouteEngine for pathfinding with obstacle avoidance
+  AutorouteEngine engine(board);
+  engine.initConnection(netNo, nullptr, nullptr);
 
-  // Get bounding box centers
-  IntBox fromBox = item->getBoundingBox();
-  IntBox toBox = targetItem->getBoundingBox();
+  // Create AutorouteControl with routing parameters
+  AutorouteControl control(board->getLayers().count());
 
-  IntPoint fromCenter((fromBox.ll.x + fromBox.ur.x) / 2,
-                      (fromBox.ll.y + fromBox.ur.y) / 2);
-  IntPoint toCenter((toBox.ll.x + toBox.ur.x) / 2,
-                    (toBox.ll.y + toBox.ur.y) / 2);
-
-  // Use first common layer, or first layer of either item
-  int layer = item->firstLayer();
-  if (!targetItem->isOnLayer(layer)) {
-    layer = targetItem->firstLayer();
+  // Set trace widths for all layers (default 0.25mm = 1250 half-width)
+  for (int i = 0; i < control.layerCount; ++i) {
+    control.traceHalfWidth[i] = 1250;
   }
 
-  // Create a simple trace (default 0.25mm = 2500 units at 10000 units/mm)
-  int halfWidth = 1250;  // 0.125mm half-width = 0.25mm full width
+  // Prepare start and destination sets
+  std::vector<Item*> startSet{item};
+  std::vector<Item*> destSet{targetItem};
 
-  std::vector<int> nets{netNo};
-  int itemId = board->generateItemId();
+  // Call the pathfinding algorithm
+  auto result = engine.autorouteConnection(startSet, destSet, control, rippedItems);
 
-  auto trace = std::make_unique<Trace>(
-    fromCenter, toCenter, layer, halfWidth,
-    nets, 0 /* clearanceClass */, itemId,
-    FixedState::NotFixed, board
-  );
-
-  board->addItem(std::move(trace));
-
-  // Mark connection as routed
-  board->markConnectionRouted(item, targetItem, netNo);
-
-  return AutorouteAttemptResult(AutorouteAttemptState::Routed,
-    "Simple direct route created");
+  // Mark connection as routed if successful
+  if (result == AutorouteEngine::AutorouteResult::Routed) {
+    board->markConnectionRouted(item, targetItem, netNo);
+    return AutorouteAttemptResult(AutorouteAttemptState::Routed,
+      "Pathfinding route created");
+  } else if (result == AutorouteEngine::AutorouteResult::AlreadyConnected) {
+    return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
+      "Already connected");
+  } else {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed,
+      "Pathfinding failed");
+  }
 }
 
 double BatchAutorouter::calculateAirlineDistance(

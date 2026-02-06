@@ -108,6 +108,12 @@ private:
 
   // Remove all doors from a room
   void removeAllDoors(ExpansionRoom* room);
+
+  // Helper methods for routing
+  AutorouteResult createDirectRoute(IntPoint start, IntPoint goal, int layer,
+                                     const AutorouteControl& ctrl);
+  AutorouteResult createTracesFromPath(const std::vector<IntPoint>& points, int layer,
+                                        const AutorouteControl& ctrl);
 };
 
 } // namespace freerouting

@@ -1,6 +1,10 @@
 #include "autoroute/AutorouteEngine.h"
 #include "autoroute/ExpansionDoor.h"
+#include "autoroute/MazeSearchAlgo.h"
+#include "autoroute/PathFinder.h"
 #include "board/Item.h"
+#include "board/Trace.h"
+#include "board/Via.h"
 #include <algorithm>
 
 namespace freerouting {
@@ -30,23 +34,108 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
     const AutorouteControl& ctrl,
     std::vector<Item*>& rippedItems) {
 
-  // Suppress unused parameter warnings for now
-  (void)startSet;
-  (void)destSet;
-  (void)ctrl;
-  (void)rippedItems;
+  (void)rippedItems;  // TODO: Implement ripup logic
 
-  // Check if already connected
-  // (This would need connectivity checking logic)
+  if (!board || startSet.empty() || destSet.empty()) {
+    return AutorouteResult::Failed;
+  }
 
-  // For now, return a placeholder
-  // In a full implementation, this would:
-  // 1. Create MazeSearchAlgo
-  // 2. Call find_connection()
-  // 3. Insert the found route into the board
-  // 4. Handle ripup if needed
+  // Check if already connected (simplified - just check if same item)
+  if (startSet.size() == 1 && destSet.size() == 1 && startSet[0] == destSet[0]) {
+    return AutorouteResult::AlreadyConnected;
+  }
 
-  return AutorouteResult::NotRouted;
+  // Get start and goal points (use bounding box centers)
+  IntBox startBox = startSet[0]->getBoundingBox();
+  IntBox goalBox = destSet[0]->getBoundingBox();
+
+  IntPoint start((startBox.ll.x + startBox.ur.x) / 2,
+                 (startBox.ll.y + startBox.ur.y) / 2);
+  IntPoint goal((goalBox.ll.x + goalBox.ur.x) / 2,
+                (goalBox.ll.y + goalBox.ur.y) / 2);
+
+  // Determine routing layer (use first common layer, or start item's first layer)
+  int layer = startSet[0]->firstLayer();
+  for (Item* destItem : destSet) {
+    if (destItem->isOnLayer(layer)) {
+      break;  // Found common layer
+    }
+    // Try destination's first layer
+    int destLayer = destItem->firstLayer();
+    if (startSet[0]->isOnLayer(destLayer)) {
+      layer = destLayer;
+      break;
+    }
+  }
+
+  // Use PathFinder for A* pathfinding with obstacle avoidance
+  PathFinder pathFinder(1000);  // 1000 unit grid resolution (0.1mm at 10000 units/mm)
+  auto pathResult = pathFinder.findPath(*board, start, goal, layer, netNo);
+
+  if (!pathResult.found || pathResult.points.size() < 2) {
+    // Pathfinding failed, try direct route as fallback
+    return createDirectRoute(start, goal, layer, ctrl);
+  }
+
+  // Create traces from the found path
+  return createTracesFromPath(pathResult.points, layer, ctrl);
+}
+
+// Helper: Create direct route (fallback when pathfinding fails)
+AutorouteEngine::AutorouteResult AutorouteEngine::createDirectRoute(
+    IntPoint start, IntPoint goal, int layer, const AutorouteControl& ctrl) {
+
+  // Get trace half-width from control
+  int halfWidth = ctrl.traceHalfWidth.empty() ? 1250 : ctrl.traceHalfWidth[layer];
+
+  std::vector<int> nets{netNo};
+  int itemId = board->generateItemId();
+
+  auto trace = std::make_unique<Trace>(
+    start, goal, layer, halfWidth,
+    nets, ctrl.traceClearanceClassNo, itemId,
+    FixedState::NotFixed, board
+  );
+
+  board->addItem(std::move(trace));
+  return AutorouteResult::Routed;
+}
+
+// Helper: Create traces from path points
+AutorouteEngine::AutorouteResult AutorouteEngine::createTracesFromPath(
+    const std::vector<IntPoint>& points, int layer, const AutorouteControl& ctrl) {
+
+  if (points.size() < 2) {
+    return AutorouteResult::NotRouted;
+  }
+
+  // Get trace half-width from control
+  int halfWidth = ctrl.traceHalfWidth.empty() ? 1250 : ctrl.traceHalfWidth[layer];
+  std::vector<int> nets{netNo};
+
+  // Create trace segments connecting consecutive points
+  for (size_t i = 0; i + 1 < points.size(); ++i) {
+    IntPoint p1 = points[i];
+    IntPoint p2 = points[i + 1];
+
+    // Skip if points are too close (avoid zero-length traces)
+    IntVector delta = p2 - p1;
+    if (delta.lengthSquared() < 100) {
+      continue;
+    }
+
+    int itemId = board->generateItemId();
+
+    auto trace = std::make_unique<Trace>(
+      p1, p2, layer, halfWidth,
+      nets, ctrl.traceClearanceClassNo, itemId,
+      FixedState::NotFixed, board
+    );
+
+    board->addItem(std::move(trace));
+  }
+
+  return AutorouteResult::Routed;
 }
 
 bool AutorouteEngine::isStopRequested() const {

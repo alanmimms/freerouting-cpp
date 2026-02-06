@@ -216,6 +216,7 @@ void DsnBoardConverter::addComponents(RoutingBoard* board, const DsnDesign& dsn)
       }
     }
 
+
     // Calculate rotation matrix for component
     double rotRad = component.rotation * M_PI / 180.0;
     double cosRot = std::cos(rotRad);

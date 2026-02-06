@@ -573,6 +573,10 @@ std::string DsnReader::parseString(const SExprNode& expr) {
   const auto& value = expr.getValue();
   if (std::holds_alternative<std::string>(value)) {
     return std::get<std::string>(value);
+  } else if (std::holds_alternative<i64>(value)) {
+    return std::to_string(std::get<i64>(value));
+  } else if (std::holds_alternative<double>(value)) {
+    return std::to_string(std::get<double>(value));
   }
 
   return "";
@@ -609,6 +613,7 @@ bool DsnReader::parseImage(const SExprNode& expr, DsnImage& image) {
     image.name = parseString(*expr.getChild(1));
   }
 
+  int pinCount = 0;
   for (size_t i = 2; i < expr.childCount(); ++i) {
     const SExprNode& item = *expr.getChild(i);
     if (!item.isList() || item.childCount() == 0) continue;
@@ -620,9 +625,11 @@ bool DsnReader::parseImage(const SExprNode& expr, DsnImage& image) {
       DsnImagePin pin;
       if (parseImagePin(item, pin)) {
         image.pins.push_back(pin);
+        pinCount++;
       }
     }
   }
+
 
   return true;
 }

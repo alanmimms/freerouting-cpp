@@ -7,6 +7,10 @@
 #include "geometry/ShapeTree.h"
 #include <vector>
 #include <memory>
+#include <map>
+#include <set>
+#include <queue>
+#include <iostream>
 
 namespace freerouting {
 
@@ -108,9 +112,15 @@ public:
   }
 
   // Find incomplete connections by analyzing board state
-  // Looks for unconnected items on the same net
+  // Uses connectivity tracing to only route unconnected items
   void updateIncompleteConnections() {
     incompleteConnections_.clear();
+
+    int totalNets = 0;
+    int netsWithMultipleItems = 0;
+    int netsNeedingRouting = 0;
+    int maxComponents = 0;
+    int totalItemsProcessed = 0;
 
     // For each net, find items that need connections
     if (const Nets* nets = getNets()) {
@@ -118,26 +128,124 @@ public:
         const Net* net = nets->getNet(netNum);
         if (!net) continue;
 
+        totalNets++;
+
         // Get all items on this net
         std::vector<Item*> netItems = getItemsByNet(netNum);
+        if (netItems.size() < 2) continue;
 
-        // Simple heuristic: connect each item to nearest unconnected item
-        // (Full algorithm would use Steiner tree / minimum spanning tree)
-        for (size_t i = 0; i < netItems.size(); ++i) {
-          for (size_t j = i + 1; j < netItems.size(); ++j) {
-            // Check if items are not already connected
-            // (simplified check - full version would trace connectivity)
-            IncompleteConnection conn(netItems[i], netItems[j], netNum);
+        netsWithMultipleItems++;
+        totalItemsProcessed += static_cast<int>(netItems.size());
+
+        // Find connected components using connectivity tracing
+        std::vector<std::vector<Item*>> components = findConnectedComponents(netItems, netNum);
+
+        if (components.size() > static_cast<size_t>(maxComponents)) {
+          maxComponents = static_cast<int>(components.size());
+        }
+
+        // If all items are in one component, net is fully connected
+        if (components.size() <= 1) continue;
+
+        netsNeedingRouting++;
+
+        // Create connections between disconnected components
+        // Connect first item of each component to first item of next component
+        // (Full algorithm would use minimum spanning tree)
+        for (size_t i = 0; i + 1 < components.size(); ++i) {
+          if (!components[i].empty() && !components[i + 1].empty()) {
+            IncompleteConnection conn(components[i][0], components[i + 1][0], netNum);
             incompleteConnections_.push_back(conn);
           }
         }
       }
     }
+
   }
 
 private:
   ShapeTree shapeTree_;  // Spatial index for routing queries
   std::vector<IncompleteConnection> incompleteConnections_;  // Connections to route
+
+  // Find connected components within a set of items on the same net
+  // Returns a vector of components, where each component is a vector of connected items
+  std::vector<std::vector<Item*>> findConnectedComponents(
+      const std::vector<Item*>& netItems, int netNumber) const {
+
+    std::vector<std::vector<Item*>> components;
+    std::set<Item*> visited;
+
+    // For each unvisited item, do BFS to find its connected component
+    for (Item* startItem : netItems) {
+      if (visited.count(startItem)) continue;
+
+      // Start new component
+      std::vector<Item*> component;
+      std::queue<Item*> queue;
+      queue.push(startItem);
+      visited.insert(startItem);
+
+      while (!queue.empty()) {
+        Item* current = queue.front();
+        queue.pop();
+        component.push_back(current);
+
+        // Find items physically connected to current
+        std::vector<Item*> neighbors = findPhysicallyConnected(current, netItems);
+        for (Item* neighbor : neighbors) {
+          if (!visited.count(neighbor)) {
+            visited.insert(neighbor);
+            queue.push(neighbor);
+          }
+        }
+      }
+
+      if (!component.empty()) {
+        components.push_back(component);
+      }
+    }
+
+    return components;
+  }
+
+  // Find items physically connected to the given item
+  // Two items are physically connected if:
+  // - They are traces sharing an endpoint
+  // - They are vias/pins at the same location
+  std::vector<Item*> findPhysicallyConnected(
+      Item* item, const std::vector<Item*>& candidates) const {
+
+    std::vector<Item*> connected;
+    if (!item) return connected;
+
+    // Get item's bounding box for spatial queries
+    IntBox itemBox = item->getBoundingBox();
+    IntPoint itemCenter((itemBox.ll.x + itemBox.ur.x) / 2,
+                        (itemBox.ll.y + itemBox.ur.y) / 2);
+
+    for (Item* candidate : candidates) {
+      if (candidate == item) continue;
+
+      IntBox candBox = candidate->getBoundingBox();
+      IntPoint candCenter((candBox.ll.x + candBox.ur.x) / 2,
+                          (candBox.ll.y + candBox.ur.y) / 2);
+
+      // Check if items overlap or are very close (tolerance for connection)
+      const int kConnectionTolerance = 100; // 0.01mm tolerance
+      int dx = (itemCenter.x > candCenter.x) ? (itemCenter.x - candCenter.x) : (candCenter.x - itemCenter.x);
+      int dy = (itemCenter.y > candCenter.y) ? (itemCenter.y - candCenter.y) : (candCenter.y - itemCenter.y);
+
+      if (dx <= kConnectionTolerance && dy <= kConnectionTolerance) {
+        // Items are at same location - check layer overlap
+        if (item->lastLayer() >= candidate->firstLayer() &&
+            item->firstLayer() <= candidate->lastLayer()) {
+          connected.push_back(candidate);
+        }
+      }
+    }
+
+    return connected;
+  }
 };
 
 } // namespace freerouting

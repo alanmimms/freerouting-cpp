@@ -71,6 +71,7 @@ add_executable(freerouting_tests
   tests/test_board_extensions.cpp
   tests/test_rule_areas.cpp
   tests/test_drc.cpp
+  tests/test_data_structures.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

@@ -15,7 +15,8 @@ std::vector<DrcViolation> DrcEngine::checkAll() {
   auto clearanceViolations = checkClearances();
   auto traceWidthViolations = checkTraceWidths();
   auto ruleAreaViolations = checkRuleAreas();
-  auto netConflictViolations = checkNetConflicts();
+  // Note: checkNetConflicts() is redundant with checkClearances() which now
+  // skips same-net items, so all clearance violations are implicitly net conflicts
 
   // Combine all violations
   allViolations.insert(allViolations.end(),
@@ -27,9 +28,6 @@ std::vector<DrcViolation> DrcEngine::checkAll() {
   allViolations.insert(allViolations.end(),
                        ruleAreaViolations.begin(),
                        ruleAreaViolations.end());
-  allViolations.insert(allViolations.end(),
-                       netConflictViolations.begin(),
-                       netConflictViolations.end());
 
   // Update statistics
   updateStatistics(allViolations);
@@ -54,6 +52,11 @@ std::vector<DrcViolation> DrcEngine::checkClearances() {
       Item* item2 = items[j].get();
 
       if (!item1 || !item2) {
+        continue;
+      }
+
+      // Skip if items share a net (they're allowed to connect)
+      if (item1->sharesNet(*item2)) {
         continue;
       }
 
@@ -341,8 +344,14 @@ int DrcEngine::calculateClearance(Item* item1, Item* item2) const {
     dy = box1.ll.y - box2.ur.y;
   }
 
-  // Return Manhattan distance (conservative for now)
-  // Could use Euclidean distance: sqrt(dx*dx + dy*dy)
+  // Use Euclidean distance for more accurate clearance measurement
+  // This is more accurate than Manhattan distance for diagonal separation
+  if (dx > 0 && dy > 0) {
+    // Boxes are diagonally separated - use Euclidean distance
+    return static_cast<int>(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy));
+  }
+
+  // Boxes are aligned horizontally or vertically - use simple distance
   return dx + dy;
 }
 

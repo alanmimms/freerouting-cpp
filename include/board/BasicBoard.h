@@ -5,6 +5,7 @@
 #include "rules/Nets.h"
 #include "rules/ClearanceMatrix.h"
 #include "board/Item.h"
+#include "board/RuleArea.h"
 #include <memory>
 #include <vector>
 #include <algorithm>
@@ -112,11 +113,95 @@ public:
   void setNets(const Nets* nets) { nets_ = nets; }
   const Nets* getNets() const { return nets_; }
 
+  // ========================================================================
+  // Rule Area Support
+  // ========================================================================
+
+  // Add a rule area to the board
+  void addRuleArea(std::unique_ptr<RuleArea> ruleArea) {
+    if (ruleArea) {
+      ruleArea->setOnBoard(true);
+      ruleAreas_.push_back(std::move(ruleArea));
+    }
+  }
+
+  // Get all rule areas
+  const std::vector<std::unique_ptr<RuleArea>>& getRuleAreas() const {
+    return ruleAreas_;
+  }
+
+  // Get rule areas affecting a specific layer
+  std::vector<RuleArea*> getRuleAreasByLayer(int layer) {
+    std::vector<RuleArea*> result;
+    for (const auto& area : ruleAreas_) {
+      if (area->isOnLayer(layer)) {
+        result.push_back(area.get());
+      }
+    }
+    return result;
+  }
+
+  // Check if a location is prohibited for a specific restriction type
+  // Returns the first rule area that prohibits this location, or nullptr if allowed
+  RuleArea* isLocationProhibited(IntPoint point,
+                                 int layer,
+                                 RuleArea::RestrictionType restrictionType,
+                                 int netNo) const {
+    for (const auto& area : ruleAreas_) {
+      // Check if rule area is on this layer
+      if (!area->isOnLayer(layer)) {
+        continue;
+      }
+
+      // Check if rule area affects this net
+      if (!area->affectsNet(netNo)) {
+        continue;
+      }
+
+      // Check if this restriction type is prohibited
+      if (!area->isProhibited(restrictionType)) {
+        continue;
+      }
+
+      // Check if point is inside the rule area
+      if (area->contains(point)) {
+        return area.get();
+      }
+    }
+
+    return nullptr;  // Location is allowed
+  }
+
+  // Convenience methods for specific restriction types
+  bool isTraceProhibited(IntPoint point, int layer, int netNo) const {
+    return isLocationProhibited(point, layer,
+                                RuleArea::RestrictionType::Traces,
+                                netNo) != nullptr;
+  }
+
+  bool isViaProhibited(IntPoint point, int layer, int netNo) const {
+    return isLocationProhibited(point, layer,
+                                RuleArea::RestrictionType::Vias,
+                                netNo) != nullptr;
+  }
+
+  bool isCopperPourProhibited(IntPoint point, int layer, int netNo) const {
+    return isLocationProhibited(point, layer,
+                                RuleArea::RestrictionType::CopperPour,
+                                netNo) != nullptr;
+  }
+
+  // Clear all rule areas
+  void clearRuleAreas() {
+    ruleAreas_.clear();
+  }
+
 private:
   LayerStructure layers_;
   const ClearanceMatrix* clearanceMatrix_;
   const Nets* nets_ = nullptr;
   std::vector<std::unique_ptr<Item>> items_;
+  std::vector<std::unique_ptr<RuleArea>> ruleAreas_;
   int nextItemId_;
 };
 

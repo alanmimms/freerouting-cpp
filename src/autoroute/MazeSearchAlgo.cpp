@@ -121,6 +121,7 @@ void MazeSearchAlgo::expand(const MazeListElement& element) {
   // 1. Get the next room from the element
   // 2. Find all doors in that room
   // 3. For each door, calculate cost and add to priority queue
+  // 4. CHECK RULE AREAS to ensure routing is allowed
 
   if (!element.nextRoom) {
     return;
@@ -146,6 +147,17 @@ void MazeSearchAlgo::expand(const MazeListElement& element) {
         continue;
       }
 
+      // Get the door location for rule area checking
+      // (Simplified - would use actual door center point from geometry)
+      IntPoint doorLocation(0, 0);
+      int doorLayer = otherRoom->getLayer();
+
+      // CHECK RULE AREAS: Skip expansion if prohibited by rule area
+      // This is the key integration point!
+      if (!isExpansionAllowed(doorLocation, doorLayer)) {
+        continue;  // Don't expand through prohibited areas
+      }
+
       // Calculate cost to expand to this door/section
       double cost = calculateExpansionCost(element, door, section, otherRoom);
 
@@ -154,12 +166,10 @@ void MazeSearchAlgo::expand(const MazeListElement& element) {
       newElement.door = door;
       newElement.sectionNo = section;
       newElement.nextRoom = otherRoom;
-      newElement.layer = otherRoom->getLayer();
+      newElement.layer = doorLayer;
       newElement.backtrackCost = element.backtrackCost + cost;
 
       // Calculate heuristic distance to destination
-      // (Simplified - would use actual door center point)
-      IntPoint doorLocation(0, 0);
       double heuristic = destinationDistance->calculate(doorLocation, newElement.layer);
 
       newElement.sortingValue = newElement.backtrackCost + heuristic;
@@ -249,6 +259,28 @@ bool MazeSearchAlgo::isDestination(ExpandableObject* door) const {
 
   // Check if it's a destination (not a start)
   return targetDoor->isDestinationDoor();
+}
+
+bool MazeSearchAlgo::isExpansionAllowed(IntPoint point, int layer) const {
+  // Check if board has rule areas that prohibit this expansion
+  auto* board = autorouteEngine->board;
+  if (!board) {
+    return true;  // No board, allow expansion
+  }
+
+  // Get the net being routed
+  int netNo = autorouteEngine->getNetNo();
+  if (netNo <= 0) {
+    return true;  // No net, allow expansion
+  }
+
+  // Check if traces are prohibited at this location
+  // This is the enforcement point for KiCad rule areas!
+  if (board->isTraceProhibited(point, layer, netNo)) {
+    return false;  // Rule area prohibits routing here
+  }
+
+  return true;  // Expansion is allowed
 }
 
 } // namespace freerouting

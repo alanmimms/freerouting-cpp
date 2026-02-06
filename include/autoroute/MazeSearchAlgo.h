@@ -65,6 +65,9 @@ public:
   // Constructor
   MazeSearchAlgo(AutorouteEngine* engine, const AutorouteControl& ctrl);
 
+  // Check if expansion to a location is allowed by rule areas
+  bool isExpansionAllowed(IntPoint point, int layer) const;
+
 private:
   AutorouteEngine* autorouteEngine;
   const AutorouteControl& control;

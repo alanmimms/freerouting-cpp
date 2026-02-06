@@ -150,11 +150,13 @@ public:
         netsNeedingRouting++;
 
         // Create connections between disconnected components
-        // Connect first item of each component to first item of next component
-        // (Full algorithm would use minimum spanning tree)
+        // Use pins (non-routable items) as endpoints to avoid targeting vias/traces
+        // that may be optimized away during routing
         for (size_t i = 0; i + 1 < components.size(); ++i) {
-          if (!components[i].empty() && !components[i + 1].empty()) {
-            IncompleteConnection conn(components[i][0], components[i + 1][0], netNum);
+          Item* fromItem = findPinInComponent(components[i]);
+          Item* toItem = findPinInComponent(components[i + 1]);
+          if (fromItem && toItem) {
+            IncompleteConnection conn(fromItem, toItem, netNum);
             incompleteConnections_.push_back(conn);
           }
         }
@@ -245,6 +247,20 @@ private:
     }
 
     return connected;
+  }
+
+  // Find a pin (non-routable item) within a component to use as endpoint
+  // Pins are stable endpoints that won't be optimized away during routing
+  // Returns nullptr if component is empty or contains only routable items
+  Item* findPinInComponent(const std::vector<Item*>& component) const {
+    for (Item* item : component) {
+      if (item && !item->isRoutable()) {
+        return item;  // Found a pin or other fixed endpoint
+      }
+    }
+    // No pin found - this component is only vias/traces (routing artifacts)
+    // Do NOT use fallback - these items may be ripped up during routing
+    return nullptr;
   }
 };
 

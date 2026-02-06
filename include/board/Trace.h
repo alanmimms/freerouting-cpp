@@ -65,6 +65,11 @@ public:
     return std::sqrt(static_cast<double>(delta.lengthSquared()));
   }
 
+  // Check if this trace shares a net with another item (convenience method)
+  bool sharesNetWith(const Item& other) const {
+    return sharesNet(other);
+  }
+
   // Check if this trace is an obstacle for another item
   bool isObstacle(const Item& other) const override {
     // Same trace is not an obstacle

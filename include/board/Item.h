@@ -5,6 +5,7 @@
 #include "geometry/IntBox.h"
 #include "geometry/Vector2.h"
 #include "core/Types.h"
+#include "autoroute/ItemAutorouteInfo.h"
 #include <vector>
 #include <algorithm>
 
@@ -92,6 +93,11 @@ public:
   // Get board reference
   BasicBoard* getBoard() const { return board_; }
 
+  // Get/set autoroute info
+  ItemAutorouteInfo& getAutorouteInfo() { return autorouteInfo_; }
+  const ItemAutorouteInfo& getAutorouteInfo() const { return autorouteInfo_; }
+  void clearAutorouteInfo() { autorouteInfo_.clear(); }
+
   // Abstract methods to be implemented by derived classes
 
   // Check if this item is an obstacle for another item
@@ -146,7 +152,8 @@ protected:
       componentNumber_(componentNumber),
       fixedState_(fixedState),
       board_(board),
-      onBoard_(false) {}
+      onBoard_(false),
+      autorouteInfo_() {}
 
   // Allow modification of net numbers by derived classes
   std::vector<int>& getMutableNets() { return netNumbers_; }
@@ -159,6 +166,7 @@ private:
   FixedState fixedState_;          // Fixed/moveable state
   BasicBoard* board_;              // Board this item is on
   bool onBoard_;                   // True if inserted into board
+  ItemAutorouteInfo autorouteInfo_; // Routing metadata
 };
 
 } // namespace freerouting

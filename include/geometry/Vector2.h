@@ -44,6 +44,12 @@ struct Vector2 {
     return !(*this == other);
   }
 
+  // Ordering (for use in std::map/set)
+  constexpr bool operator<(const Vector2& other) const {
+    if (x != other.x) return x < other.x;
+    return y < other.y;
+  }
+
   // Check if zero vector
   constexpr bool isZero() const {
     return x == T(0) && y == T(0);

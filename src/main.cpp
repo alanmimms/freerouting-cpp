@@ -1,4 +1,6 @@
 #include "cli/CommandLineArgs.h"
+#include "io/KiCadPcbReader.h"
+#include "io/KiCadPcbWriter.h"
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -114,14 +116,24 @@ int main(int argc, const char* argv[]) {
     // Step 1: Load input file
     log(args.verbosity, 1, "Loading input file...");
 
-    // TODO: Implement KiCad file loading when I/O is complete
-    // For now, this is a placeholder showing the intended structure
-
     log(args.verbosity, 2, "  Parsing PCB structure...");
-    // auto board = loadKicadPcb(args.inputFile);
+    auto pcbOpt = KiCadPcbReader::readFromFile(args.inputFile);
 
-    log(args.verbosity, 2, "  Building spatial index...");
-    // buildSpatialIndex(board);
+    if (!pcbOpt.has_value()) {
+      std::cerr << "Error: Failed to parse PCB file" << std::endl;
+      return kErrorInput;
+    }
+
+    KiCadPcb& pcb = *pcbOpt;
+
+    if (!pcb.isValid()) {
+      std::cerr << "Error: Invalid PCB structure (missing layers or paper size)" << std::endl;
+      return kErrorInput;
+    }
+
+    log(args.verbosity, 2, "  PCB version: " + std::to_string(pcb.version.version));
+    log(args.verbosity, 2, "  Layer count: " + std::to_string(pcb.layers.count()));
+    log(args.verbosity, 2, "  Net count: " + std::to_string(pcb.nets.count()));
 
     log(args.verbosity, 1, "Input loaded successfully");
 
@@ -182,8 +194,10 @@ int main(int argc, const char* argv[]) {
     // Step 5: Write output file
     log(args.verbosity, 1, "Writing output file...");
 
-    // TODO: Implement KiCad file writing when I/O is complete
-    // writeKicadPcb(board, args.outputFile);
+    if (!KiCadPcbWriter::writeToFile(pcb, args.outputFile)) {
+      std::cerr << "Error: Failed to write output file" << std::endl;
+      return kErrorOutput;
+    }
 
     log(args.verbosity, 1, "Output written successfully");
 

@@ -36,6 +36,9 @@ add_library(freerouting
   src/autoroute/FreeSpaceExpansionRoom.cpp
   src/autoroute/CompleteFreeSpaceExpansionRoom.cpp
   src/autoroute/TargetItemExpansionDoor.cpp
+  src/autoroute/DestinationDistance.cpp
+  src/autoroute/AutorouteEngine.cpp
+  src/autoroute/MazeSearchAlgo.cpp
 )
 target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR})
 target_link_libraries(freerouting PUBLIC pthread)
@@ -61,6 +64,7 @@ add_executable(freerouting_tests
   tests/test_shapes.cpp
   tests/test_routing.cpp
   tests/test_expansion_rooms.cpp
+  tests/test_maze_search.cpp
 )
 target_link_libraries(freerouting_tests PRIVATE freerouting Catch2::Catch2WithMain)
 

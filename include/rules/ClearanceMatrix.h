@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <algorithm>
+#include <strings.h>
 
 namespace freerouting {
 

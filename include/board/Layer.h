@@ -1,6 +1,7 @@
 #ifndef FREEROUTING_BOARD_LAYER_H
 #define FREEROUTING_BOARD_LAYER_H
 
+#include <string>
 #include <string_view>
 
 namespace freerouting {

@@ -265,8 +265,26 @@ std::vector<Item*> AutorouteEngine::findConflictingItems(
   int maxY = std::max(start.y, end.y) + halfWidth;
   IntBox traceBox(minX, minY, maxX, maxY);
 
+  // Get required clearance for querying shape tree
+  const ClearanceMatrix& clearance = board->getClearanceMatrix();
+  int requiredClearance = clearance.getValue(
+    1,  // Use class 1 ("default") - class 0 ("null") is not initialized
+    1,
+    layer,
+    true  // Add safety margin
+  );
+
+  // Expand trace box by clearance for shape tree query
+  // This ensures we find all items within the clearance zone
+  IntBox queryBox(
+    traceBox.ll.x - requiredClearance,
+    traceBox.ll.y - requiredClearance,
+    traceBox.ur.x + requiredClearance,
+    traceBox.ur.y + requiredClearance
+  );
+
   // Query the shape tree for potential conflicts
-  const auto& items = board->getShapeTree().queryRegion(traceBox);
+  const auto& items = board->getShapeTree().queryRegion(queryBox);
 
   // Check each item for actual conflicts
   for (Item* item : items) {
@@ -283,33 +301,18 @@ std::vector<Item*> AutorouteEngine::findConflictingItems(
       continue;
     }
 
-    // Skip fixed items (we can't ripup user-placed traces)
-    if (item->isUserFixed()) {
-      continue;
-    }
+    // NOTE: We do NOT skip fixed items here - they are obstacles that must be
+    // respected. The ripupConflicts() function will handle them (and fail to
+    // ripup them, preventing the trace from being placed).
 
     // Check if bounding boxes overlap (accounting for clearance)
+    // Note: We already expanded traceBox by requiredClearance when querying
+    // the shape tree, so we just need to check if the expanded box (queryBox)
+    // intersects with the item's bounding box
     IntBox itemBox = item->getBoundingBox();
 
-    // Get required clearance
-    const ClearanceMatrix& clearance = board->getClearanceMatrix();
-    int requiredClearance = clearance.getValue(
-      1,  // Use class 1 ("default") - class 0 ("null") is not initialized
-      1,
-      layer,
-      true  // Add safety margin
-    );
-
-    // Expand trace box by required clearance
-    IntBox expandedBox(
-      traceBox.ll.x - requiredClearance,
-      traceBox.ll.y - requiredClearance,
-      traceBox.ur.x + requiredClearance,
-      traceBox.ur.y + requiredClearance
-    );
-
     // Check if expanded box overlaps with item
-    if (expandedBox.intersects(itemBox)) {
+    if (queryBox.intersects(itemBox)) {
       conflicts.push_back(item);
     }
   }

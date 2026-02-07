@@ -131,34 +131,46 @@ inline PathFinder::PathResult PathFinder::findPath(
     return result;  // Goal blocked
   }
 
-  // Priority queue for open set
-  std::priority_queue<Node, std::vector<Node>, std::greater<Node>> openSet;
+  // Node storage - keeps nodes alive for parent pointers
+  std::map<IntPoint, Node> nodeMap;
 
-  // Closed set (visited nodes)
+  // Priority queue for open set (stores pointers to nodes in nodeMap)
+  auto nodePtrCmp = [](const Node* a, const Node* b) {
+    return a->fCost > b->fCost;
+  };
+  std::priority_queue<Node*, std::vector<Node*>, decltype(nodePtrCmp)> openSet(nodePtrCmp);
+
+  // Closed set (visited points)
   std::map<IntPoint, double> closedSet;
 
-  // Start node
-  Node startNode(start, 0.0, heuristic(start, goal));
-  openSet.push(startNode);
+  // Create start node
+  auto [startIt, _] = nodeMap.emplace(start, Node(start, 0.0, heuristic(start, goal)));
+  openSet.push(&startIt->second);
 
   // A* search
-  constexpr int kMaxIterations = 10000;  // Prevent infinite loops
+  constexpr int kMaxIterations = 50000;  // Increased limit for complex routes
   int iterations = 0;
 
   while (!openSet.empty() && iterations < kMaxIterations) {
     ++iterations;
 
     // Get node with lowest f-cost
-    Node current = openSet.top();
+    Node* current = openSet.top();
     openSet.pop();
 
+    // Skip if already processed with better cost
+    auto closedIt = closedSet.find(current->point);
+    if (closedIt != closedSet.end() && closedIt->second <= current->gCost) {
+      continue;
+    }
+
     // Check if reached goal
-    if (current.point == goal) {
+    if (current->point == goal) {
       // Reconstruct path
       result.found = true;
-      result.cost = current.gCost;
+      result.cost = current->gCost;
 
-      Node* node = &current;
+      Node* node = current;
       while (node) {
         result.points.push_back(node->point);
         node = node->parent;
@@ -170,13 +182,13 @@ inline PathFinder::PathResult PathFinder::findPath(
     }
 
     // Mark as visited
-    closedSet[current.point] = current.gCost;
+    closedSet[current->point] = current->gCost;
 
     // Check neighbors
-    for (IntPoint neighbor : getNeighbors(current.point)) {
+    for (IntPoint neighbor : getNeighbors(current->point)) {
       // Skip if already visited with better cost
       auto it = closedSet.find(neighbor);
-      if (it != closedSet.end() && it->second <= current.gCost + gridSize_) {
+      if (it != closedSet.end() && it->second <= current->gCost + gridSize_) {
         continue;
       }
 
@@ -185,13 +197,28 @@ inline PathFinder::PathResult PathFinder::findPath(
         continue;
       }
 
-      // Add to open set
-      double gCost = current.gCost + gridSize_;
+      // Calculate costs
+      double gCost = current->gCost + gridSize_;
       double hCost = heuristic(neighbor, goal);
 
-      // Note: This simplified version doesn't properly track parent pointers
-      // A full implementation would use a node pool or smart pointers
-      openSet.emplace(neighbor, gCost, hCost, nullptr);
+      // Check if we already have this node with better cost
+      auto existingIt = nodeMap.find(neighbor);
+      if (existingIt != nodeMap.end() && existingIt->second.gCost <= gCost) {
+        continue;
+      }
+
+      // Create or update node with parent pointer to current
+      auto [nodeIt, inserted] = nodeMap.emplace(neighbor, Node(neighbor, gCost, hCost, current));
+      if (!inserted) {
+        // Update existing node if new path is better
+        nodeIt->second.gCost = gCost;
+        nodeIt->second.hCost = hCost;
+        nodeIt->second.fCost = gCost + hCost;
+        nodeIt->second.parent = current;
+      }
+
+      // Add to open set
+      openSet.push(&nodeIt->second);
     }
   }
 

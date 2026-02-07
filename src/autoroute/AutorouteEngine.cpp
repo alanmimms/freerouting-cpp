@@ -63,9 +63,18 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   bool needsVia = (startLayer != destLayer);
 
   if (!needsVia) {
-    // Same layer routing - use simple pathfinding
-    PathFinder pathFinder(1000);  // 1000 unit grid = 0.1mm
-    auto pathResult = pathFinder.findPath(*board, start, goal, startLayer, netNo);
+    // Same layer routing - use adaptive pathfinding
+    // Try coarse grid first (fast), then fine grid if needed (precise)
+
+    // First attempt: Coarse grid (1000 units = 0.1mm) for speed
+    PathFinder coarsePathFinder(1000);
+    auto pathResult = coarsePathFinder.findPath(*board, start, goal, startLayer, netNo);
+
+    // If coarse grid failed, retry with finer grid (500 units = 0.05mm)
+    if (!pathResult.found) {
+      PathFinder finePathFinder(500);
+      pathResult = finePathFinder.findPath(*board, start, goal, startLayer, netNo);
+    }
 
     if (!pathResult.found || pathResult.points.size() < 2) {
       return createDirectRoute(start, goal, startLayer, ctrl, ripupCostLimit, rippedItems);

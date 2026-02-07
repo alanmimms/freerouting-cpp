@@ -88,7 +88,7 @@ private:
     );
   }
 
-  // Check if point is clear for routing
+  // Check if point is clear for routing (overlap check only)
   bool isPointClear(RoutingBoard& board, IntPoint point, int layer, int netNumber) const {
     // Query nearby items
     IntBox searchBox(

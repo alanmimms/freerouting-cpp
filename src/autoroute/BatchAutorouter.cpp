@@ -202,8 +202,9 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   }
 
   // Configure ripup settings based on pass number
-  control.ripupAllowed = (ripupPassNo > 1);  // Enable ripup after first pass
-  control.ripupCosts = config.startRipupCosts * ripupPassNo;  // Increase cost with passes
+  // Enable ripup on all passes, but increase aggressiveness on later passes
+  control.ripupAllowed = true;
+  control.ripupCosts = config.startRipupCosts * std::max(1, ripupPassNo);  // Increase cost with passes
   control.ripupPassNo = ripupPassNo;
 
   // Prepare start and destination sets

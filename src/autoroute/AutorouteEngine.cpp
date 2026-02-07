@@ -179,11 +179,41 @@ AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
     IntPoint start, IntPoint goal, int startLayer, int destLayer,
     const AutorouteControl& ctrl, int ripupCostLimit, std::vector<Item*>& rippedItems) {
 
-  // Calculate via location (midpoint between start and goal)
-  IntPoint viaLocation(
-    (start.x + goal.x) / 2,
-    (start.y + goal.y) / 2
-  );
+  // Try multiple via locations (midpoint, closer to start, closer to goal)
+  std::vector<IntPoint> viaLocations;
+
+  // Midpoint (default)
+  viaLocations.push_back(IntPoint((start.x + goal.x) / 2, (start.y + goal.y) / 2));
+
+  // Closer to start (25% of the way)
+  viaLocations.push_back(IntPoint(
+    start.x + (goal.x - start.x) / 4,
+    start.y + (goal.y - start.y) / 4
+  ));
+
+  // Closer to goal (75% of the way)
+  viaLocations.push_back(IntPoint(
+    start.x + 3 * (goal.x - start.x) / 4,
+    start.y + 3 * (goal.y - start.y) / 4
+  ));
+
+  // Try each via location until one works
+  for (const IntPoint& viaLocation : viaLocations) {
+    auto result = tryRouteWithViaAt(viaLocation, start, goal, startLayer, destLayer,
+                                     ctrl, ripupCostLimit, rippedItems);
+    if (result == AutorouteResult::Routed) {
+      return result;
+    }
+  }
+
+  return AutorouteResult::NotRouted;
+}
+
+// Helper: Try routing with via at specific location
+AutorouteEngine::AutorouteResult AutorouteEngine::tryRouteWithViaAt(
+    IntPoint viaLocation, IntPoint start, IntPoint goal,
+    int startLayer, int destLayer,
+    const AutorouteControl& ctrl, int ripupCostLimit, std::vector<Item*>& rippedItems) {
 
   // Check if a via already exists at this location
   Via* existingVia = findViaAtLocation(viaLocation, netNo);

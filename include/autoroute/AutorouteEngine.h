@@ -124,6 +124,10 @@ private:
   AutorouteResult routeWithVia(IntPoint start, IntPoint goal, int startLayer, int destLayer,
                                 const AutorouteControl& ctrl,
                                 int ripupCostLimit, std::vector<Item*>& rippedItems);
+  AutorouteResult tryRouteWithViaAt(IntPoint viaLocation, IntPoint start, IntPoint goal,
+                                     int startLayer, int destLayer,
+                                     const AutorouteControl& ctrl,
+                                     int ripupCostLimit, std::vector<Item*>& rippedItems);
 
   // Find existing via at a location (returns nullptr if not found)
   Via* findViaAtLocation(IntPoint location, int netNo) const;

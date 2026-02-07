@@ -170,6 +170,10 @@ int main(int argc, const char* argv[]) {
       auto [dsnBoard, dsnClearance] = DsnBoardConverter::createRoutingBoard(dsn);
       board = std::move(dsnBoard);
       clearanceMatrix = dsnClearance;
+      // Update clearance matrix to point to board's layer structure (not the temporary one)
+      clearanceMatrix.setLayerStructure(&board->getLayers());
+      // Update board's clearance matrix pointer to point to the copied matrix
+      board->setClearanceMatrix(&clearanceMatrix);
 
     } else {
       // KiCad format
@@ -202,6 +206,8 @@ int main(int argc, const char* argv[]) {
       auto [kicadBoard, kicadClearance] = KiCadBoardConverter::createRoutingBoard(pcb);
       board = std::move(kicadBoard);
       clearanceMatrix = *kicadClearance;
+      // Update clearance matrix to point to board's layer structure (not the temporary one)
+      clearanceMatrix.setLayerStructure(&board->getLayers());
       // Update board's clearance matrix pointer to point to the copied matrix
       board->setClearanceMatrix(&clearanceMatrix);
     }

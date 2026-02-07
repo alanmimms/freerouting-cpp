@@ -53,6 +53,11 @@ public:
     return result;
   }
 
+  // Update the layer structure pointer (needed after copying when LayerStructure moves)
+  void setLayerStructure(const LayerStructure* layerStructure) {
+    layerStructure_ = layerStructure;
+  }
+
   // Get clearance class number by name
   // Returns -1 if not found
   int getClassNumber(std::string_view name) const {

@@ -294,8 +294,8 @@ std::vector<Item*> AutorouteEngine::findConflictingItems(
     // Get required clearance
     const ClearanceMatrix& clearance = board->getClearanceMatrix();
     int requiredClearance = clearance.getValue(
-      0,  // Assume class 0 for now (should use actual clearance classes)
-      0,
+      1,  // Use class 1 ("default") - class 0 ("null") is not initialized
+      1,
       layer,
       true  // Add safety margin
     );

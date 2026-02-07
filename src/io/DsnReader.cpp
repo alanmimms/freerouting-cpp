@@ -398,7 +398,7 @@ bool DsnReader::parseWire(const SExprNode& expr, DsnWire& wire) {
     if (!item.isList() || item.childCount() == 0) continue;
 
     std::string name = parseString(*item.getChild(0));
-    if (name == "path") {
+    if (name == "path" || name == "polyline_path") {
       DsnPath path;
       if (parsePath(item, path)) {
         wire.paths.push_back(path);
@@ -443,7 +443,7 @@ bool DsnReader::parsePath(const SExprNode& expr, DsnPath& path) {
   if (!expr.isList() || expr.childCount() == 0) return false;
 
   std::string keyword = parseString(*expr.getChild(0));
-  if (keyword != "path" && keyword != "polygon") return false;
+  if (keyword != "path" && keyword != "polyline_path" && keyword != "polygon") return false;
 
   if (expr.childCount() >= 2) {
     path.layer = parseString(*expr.getChild(1));

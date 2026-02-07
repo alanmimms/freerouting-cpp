@@ -141,7 +141,9 @@ void DsnBoardConverter::addWiring(RoutingBoard* board, const DsnDesign& dsn) {
     for (const auto& path : dsnWire.paths) {
       // Find layer index
       int layerIndex = dsn.getLayerIndex(path.layer);
-      if (layerIndex < 0) continue;
+      if (layerIndex < 0) {
+        continue;
+      }
 
       // Convert width to internal units
       int halfWidth = dsn.toInternalUnits(path.width) / 2;

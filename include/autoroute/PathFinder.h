@@ -56,18 +56,28 @@ private:
     double hCost;  // Heuristic to goal
     double fCost;  // Total cost
     Node* parent;
+    int directionX;  // Direction from parent (-1, 0, 1)
+    int directionY;  // Direction from parent (-1, 0, 1)
 
-    Node(IntPoint p, double g, double h, Node* par = nullptr)
-      : point(p), gCost(g), hCost(h), fCost(g + h), parent(par) {}
+    Node(IntPoint p, double g, double h, Node* par = nullptr, int dx = 0, int dy = 0)
+      : point(p), gCost(g), hCost(h), fCost(g + h), parent(par),
+        directionX(dx), directionY(dy) {}
 
     bool operator>(const Node& other) const {
       return fCost > other.fCost;
     }
   };
 
-  // Calculate heuristic (Manhattan distance)
+  // Calculate heuristic (Octile distance - optimal for 8-directional movement)
   static double heuristic(IntPoint a, IntPoint b) {
-    return std::abs(a.x - b.x) + std::abs(a.y - b.y);
+    int dx = std::abs(a.x - b.x);
+    int dy = std::abs(a.y - b.y);
+    // Octile distance: D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
+    // where D = straight cost, D2 = diagonal cost
+    // For grid movement: D = 1, D2 = sqrt(2) ≈ 1.414
+    constexpr double D = 1.0;
+    constexpr double D2 = 1.414;
+    return D * (dx + dy) + (D2 - 2.0 * D) * std::min(dx, dy);
   }
 
   // Snap point to grid
@@ -100,13 +110,30 @@ private:
     return true;
   }
 
-  // Get neighbors for A* search (4-directional)
-  std::vector<IntPoint> getNeighbors(IntPoint point) const {
+  // Neighbor info for pathfinding
+  struct Neighbor {
+    IntPoint point;
+    int dirX;  // Direction: -1, 0, or 1
+    int dirY;
+    double cost;  // Movement cost (1.0 for straight, 1.414 for diagonal)
+  };
+
+  // Get neighbors for A* search (8-directional with costs)
+  std::vector<Neighbor> getNeighbors(IntPoint point) const {
+    constexpr double STRAIGHT_COST = 1.0;
+    constexpr double DIAGONAL_COST = 1.414;  // sqrt(2)
+
     return {
-      IntPoint(point.x + gridSize_, point.y),
-      IntPoint(point.x - gridSize_, point.y),
-      IntPoint(point.x, point.y + gridSize_),
-      IntPoint(point.x, point.y - gridSize_)
+      // Straight moves (lower cost)
+      {IntPoint(point.x + gridSize_, point.y), 1, 0, STRAIGHT_COST},
+      {IntPoint(point.x - gridSize_, point.y), -1, 0, STRAIGHT_COST},
+      {IntPoint(point.x, point.y + gridSize_), 0, 1, STRAIGHT_COST},
+      {IntPoint(point.x, point.y - gridSize_), 0, -1, STRAIGHT_COST},
+      // Diagonal moves (higher cost but more direct)
+      {IntPoint(point.x + gridSize_, point.y + gridSize_), 1, 1, DIAGONAL_COST},
+      {IntPoint(point.x + gridSize_, point.y - gridSize_), 1, -1, DIAGONAL_COST},
+      {IntPoint(point.x - gridSize_, point.y + gridSize_), -1, 1, DIAGONAL_COST},
+      {IntPoint(point.x - gridSize_, point.y - gridSize_), -1, -1, DIAGONAL_COST}
     };
   }
 };
@@ -144,11 +171,13 @@ inline PathFinder::PathResult PathFinder::findPath(
   std::map<IntPoint, double> closedSet;
 
   // Create start node
-  auto [startIt, _] = nodeMap.emplace(start, Node(start, 0.0, heuristic(start, goal)));
+  double startHeuristic = heuristic(start, goal) * gridSize_;
+  auto [startIt, _] = nodeMap.emplace(start, Node(start, 0.0, startHeuristic));
   openSet.push(&startIt->second);
 
   // A* search
-  constexpr int kMaxIterations = 50000;  // Increased limit for complex routes
+  constexpr int kMaxIterations = 100000;  // Increased limit for complex routes
+  constexpr double BEND_PENALTY = 0.5;  // Cost penalty for changing direction
   int iterations = 0;
 
   while (!openSet.empty() && iterations < kMaxIterations) {
@@ -185,36 +214,58 @@ inline PathFinder::PathResult PathFinder::findPath(
     closedSet[current->point] = current->gCost;
 
     // Check neighbors
-    for (IntPoint neighbor : getNeighbors(current->point)) {
+    for (const Neighbor& neighbor : getNeighbors(current->point)) {
       // Skip if already visited with better cost
-      auto it = closedSet.find(neighbor);
-      if (it != closedSet.end() && it->second <= current->gCost + gridSize_) {
+      auto it = closedSet.find(neighbor.point);
+      if (it != closedSet.end()) {
         continue;
       }
 
       // Skip if blocked
-      if (!isPointClear(board, neighbor, layer, netNumber)) {
+      if (!isPointClear(board, neighbor.point, layer, netNumber)) {
         continue;
       }
 
-      // Calculate costs
-      double gCost = current->gCost + gridSize_;
-      double hCost = heuristic(neighbor, goal);
+      // Calculate movement cost (distance * grid size)
+      double moveCost = neighbor.cost * gridSize_;
+
+      // Apply bend penalty if changing direction
+      double bendCost = 0.0;
+      if (current->parent != nullptr) {
+        // Check if direction changed from parent -> current -> neighbor
+        bool directionChanged = (current->directionX != neighbor.dirX ||
+                                 current->directionY != neighbor.dirY);
+        if (directionChanged) {
+          bendCost = BEND_PENALTY * gridSize_;
+        }
+      }
+
+      // Total cost from start
+      double gCost = current->gCost + moveCost + bendCost;
 
       // Check if we already have this node with better cost
-      auto existingIt = nodeMap.find(neighbor);
+      auto existingIt = nodeMap.find(neighbor.point);
       if (existingIt != nodeMap.end() && existingIt->second.gCost <= gCost) {
         continue;
       }
 
-      // Create or update node with parent pointer to current
-      auto [nodeIt, inserted] = nodeMap.emplace(neighbor, Node(neighbor, gCost, hCost, current));
+      // Heuristic cost to goal
+      double hCost = heuristic(neighbor.point, goal) * gridSize_;
+
+      // Create or update node with parent pointer and direction
+      auto [nodeIt, inserted] = nodeMap.emplace(
+        neighbor.point,
+        Node(neighbor.point, gCost, hCost, current, neighbor.dirX, neighbor.dirY)
+      );
+
       if (!inserted) {
         // Update existing node if new path is better
         nodeIt->second.gCost = gCost;
         nodeIt->second.hCost = hCost;
         nodeIt->second.fCost = gCost + hCost;
         nodeIt->second.parent = current;
+        nodeIt->second.directionX = neighbor.dirX;
+        nodeIt->second.directionY = neighbor.dirY;
       }
 
       // Add to open set

@@ -29,6 +29,11 @@ public:
   // Get clearance matrix
   const ClearanceMatrix& getClearanceMatrix() const { return *clearanceMatrix_; }
 
+  // Update clearance matrix pointer (needed when copying clearance matrix to new location)
+  void setClearanceMatrix(const ClearanceMatrix* clearanceMatrix) {
+    clearanceMatrix_ = clearanceMatrix;
+  }
+
   // Add an item to the board
   // Board takes ownership of the item
   void addItem(std::unique_ptr<Item> item) {

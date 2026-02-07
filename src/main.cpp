@@ -202,6 +202,8 @@ int main(int argc, const char* argv[]) {
       auto [kicadBoard, kicadClearance] = KiCadBoardConverter::createRoutingBoard(pcb);
       board = std::move(kicadBoard);
       clearanceMatrix = *kicadClearance;
+      // Update board's clearance matrix pointer to point to the copied matrix
+      board->setClearanceMatrix(&clearanceMatrix);
     }
 
     if (!board) {

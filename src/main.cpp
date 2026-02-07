@@ -243,8 +243,8 @@ int main(int argc, const char* argv[]) {
 
     log(args.verbosity, 2, "  Max passes: " + std::to_string(config.maxPasses));
 
-    // Run routing (simplified - just run one pass for now)
-    autorouter.autoroutePass(1, nullptr);
+    // Run routing batch loop
+    bool completelyRouted = autorouter.runBatchLoop(nullptr);
 
     // Show routing summary
     if (args.verbosity >= 1) {
@@ -252,6 +252,7 @@ int main(int argc, const char* argv[]) {
     }
 
     log(args.verbosity, 1, "Routing completed");
+    log(args.verbosity, 2, completelyRouted ? "  All connections routed" : "  Some connections incomplete");
     const auto& stats = autorouter.getLastPassStats();
     log(args.verbosity, 1, "  Items routed: " + std::to_string(stats.itemsRouted));
     log(args.verbosity, 1, "  Items failed: " + std::to_string(stats.itemsFailed));

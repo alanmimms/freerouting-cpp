@@ -324,15 +324,24 @@ std::vector<Item*> AutorouteEngine::findConflictingItems(
 int AutorouteEngine::calculateRipupCost(Item* item, int passNumber) const {
   if (!item) return INT32_MAX;
 
+  // Can't ripup fixed items
+  if (item->isUserFixed()) {
+    return INT32_MAX;
+  }
+
   // Base cost starts low and increases with each pass
   // This makes the router more aggressive about ripup in later passes
   int baseCost = 100;
 
-  // Increase cost for each previous ripup of this item
-  // (stored in autoroute info if we had that infrastructure)
-  int ripupCount = 0;  // TODO: Track ripup count per item
+  // Get ripup count for this item
+  int ripupCount = 0;
+  auto it = ripupCounts.find(item->getId());
+  if (it != ripupCounts.end()) {
+    ripupCount = it->second;
+  }
 
   // Cost formula: baseCost * (1 + ripupCount) * passNumber
+  // Items that have been ripped multiple times become more expensive
   int cost = baseCost * (1 + ripupCount) * std::max(1, passNumber);
 
   return cost;
@@ -344,27 +353,48 @@ bool AutorouteEngine::ripupConflicts(
     int ripupCostLimit,
     std::vector<Item*>& rippedItems) {
 
-  if (!board) return false;
+  if (!board || conflicts.empty()) return true;  // No conflicts = success
 
-  // Check if all conflicts can be ripped within cost limit
+  // Calculate total ripup cost and check if all can be ripped
+  int totalCost = 0;
+  std::vector<std::pair<Item*, int>> itemsWithCosts;  // Track items and their costs
+
   for (Item* conflict : conflicts) {
     if (!conflict) continue;
 
-    // Can't ripup fixed items
-    if (conflict->isUserFixed()) {
+    // Calculate cost for this item (pass number = 1 for now)
+    int cost = calculateRipupCost(conflict, 1);
+
+    // Can't ripup fixed items (cost will be INT32_MAX)
+    if (cost == INT32_MAX) {
       return false;
     }
 
-    // Check ripup cost (for now, simplified - just check pass number)
-    // In full implementation, would track ripup history per item
+    totalCost += cost;
+    itemsWithCosts.emplace_back(conflict, cost);
+
+    // Early exit if we've already exceeded budget
+    if (totalCost > ripupCostLimit) {
+      return false;
+    }
   }
 
-  // Ripup all conflicts
-  for (Item* conflict : conflicts) {
+  // Check if total cost is within budget
+  if (totalCost > ripupCostLimit) {
+    return false;
+  }
+
+  // All conflicts can be ripped within budget - proceed with ripup
+  for (const auto& [conflict, cost] : itemsWithCosts) {
     if (!conflict) continue;
 
+    int itemId = conflict->getId();
+
+    // Increment ripup count for this item
+    ripupCounts[itemId]++;
+
     // Remove from board
-    board->removeItem(conflict->getId());
+    board->removeItem(itemId);
 
     // Add to ripped items list for potential re-routing
     rippedItems.push_back(conflict);

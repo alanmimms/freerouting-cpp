@@ -9,6 +9,7 @@
 #include "datastructures/TimeLimit.h"
 #include <vector>
 #include <memory>
+#include <map>
 
 namespace freerouting {
 
@@ -106,6 +107,9 @@ private:
   std::vector<std::unique_ptr<CompleteFreeSpaceExpansionRoom>> completeExpansionRooms;
 
   int expansionRoomInstanceCount;
+
+  // Ripup tracking: maps item ID -> number of times it's been ripped up
+  std::map<int, int> ripupCounts;
 
   // Remove all doors from a room
   void removeAllDoors(ExpansionRoom* room);

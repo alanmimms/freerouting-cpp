@@ -134,8 +134,8 @@ public:
       attachSmdAllowed(false),
       minNormalViaCost(100.0),
       minCheapViaCost(50.0),
-      ripupAllowed(false),
-      ripupCosts(100),
+      ripupAllowed(true),   // Enable ripup by default
+      ripupCosts(1000),      // Allow ripup up to 10 items (100 * 10)
       ripupPassNo(0),
       isFanout(false),
       removeUnconnectedVias(true),

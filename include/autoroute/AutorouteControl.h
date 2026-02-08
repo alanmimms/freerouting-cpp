@@ -77,6 +77,9 @@ public:
   int ripupCosts;
   int ripupPassNo;
 
+  // Maximum iterations for A* search
+  int maxIterations;
+
   // If true, the autoroute algorithm completes after the first drill
   bool isFanout;
 
@@ -137,6 +140,7 @@ public:
       ripupAllowed(true),   // Enable ripup by default
       ripupCosts(1000),      // Allow ripup up to 10 items (100 * 10)
       ripupPassNo(0),
+      maxIterations(100000),  // Default 100k iterations
       isFanout(false),
       removeUnconnectedVias(true),
       netNo(-1),

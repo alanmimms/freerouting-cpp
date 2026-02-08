@@ -145,6 +145,26 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
     return AutorouteAttemptResult(AutorouteAttemptState::Failed, "No board or item");
   }
 
+  // Check if this is a power/ground net - skip for now (needs special handling)
+  const Nets* nets = board->getNets();
+  if (nets) {
+    const Net* net = nets->getNet(netNo);
+    if (net) {
+      std::string netName = net->getName();
+      // Skip power/ground nets (common patterns)
+      if (netName == "GND" || netName == "GNDA" || netName == "GNDD" ||
+          netName == "VCC" || netName == "VDD" || netName == "VSS" ||
+          netName.find("GND") != std::string::npos ||
+          netName.find("+3V") != std::string::npos ||
+          netName.find("+5V") != std::string::npos ||
+          netName.find("+12V") != std::string::npos ||
+          netName.find("-12V") != std::string::npos) {
+        return AutorouteAttemptResult(AutorouteAttemptState::Skipped,
+          "Power/ground net (needs copper pour)");
+      }
+    }
+  }
+
   // Find incomplete connections for this item and net
   const auto& connections = board->getIncompleteConnections();
 
@@ -206,6 +226,19 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   control.ripupAllowed = true;
   control.ripupCosts = config.startRipupCosts * std::max(1, ripupPassNo);  // Increase cost with passes
   control.ripupPassNo = ripupPassNo;
+
+  // Adjust iteration limit based on net complexity (count connections on this net)
+  int netConnectionCount = 0;
+  for (const auto& conn : connections) {
+    if (conn.getNetNumber() == netNo) {
+      netConnectionCount++;
+    }
+  }
+
+  // Dynamic iteration limit: base 50k + 5k per connection (sqrt scaling for large nets)
+  // For GND with ~282 connections: 50k + 5k*sqrt(282) ≈ 50k + 84k = 134k
+  // For simple 2-pad net: 50k + 5k*sqrt(1) = 55k
+  control.maxIterations = 50000 + static_cast<int>(5000 * std::sqrt(std::max(1, netConnectionCount)));
 
   // Prepare start and destination sets
   std::vector<Item*> startSet{item};

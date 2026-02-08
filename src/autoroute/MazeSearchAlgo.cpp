@@ -75,11 +75,11 @@ bool MazeSearchAlgo::init(
 MazeSearchAlgo::Result MazeSearchAlgo::findConnection() {
   Result result;
 
-  constexpr int kMaxIterations = 100000;
+  int maxIterations = control.maxIterations;
   int iterations = 0;
 
   // A* search through expansion rooms
-  while (!mazeExpansionList.empty() && iterations < kMaxIterations) {
+  while (!mazeExpansionList.empty() && iterations < maxIterations) {
     ++iterations;
 
     // Check if we should stop

@@ -80,8 +80,36 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     }
   }
 
-  // Route each net
-  for (const auto& netPair : itemsByNet) {
+  // Sort nets by complexity (simple nets first for better board utilization)
+  // Priority: 2-pad nets → 3-5 pad nets → larger nets
+  std::vector<std::pair<int, std::vector<Item*>>> sortedNets(
+    itemsByNet.begin(), itemsByNet.end());
+
+  std::sort(sortedNets.begin(), sortedNets.end(),
+    [](const auto& a, const auto& b) {
+      size_t sizeA = a.second.size();
+      size_t sizeB = b.second.size();
+
+      // Priority categories: 2-pad (highest), 3-5 pad (medium), >5 pad (lowest)
+      auto getPriority = [](size_t size) {
+        if (size <= 2) return 0;  // Highest priority
+        if (size <= 5) return 1;  // Medium priority
+        return 2;                 // Lowest priority
+      };
+
+      int priorityA = getPriority(sizeA);
+      int priorityB = getPriority(sizeB);
+
+      if (priorityA != priorityB) {
+        return priorityA < priorityB;  // Lower number = higher priority
+      }
+
+      // Within same priority, route smaller nets first
+      return sizeA < sizeB;
+    });
+
+  // Route each net in optimal order
+  for (const auto& netPair : sortedNets) {
     if (stoppable && stoppable->isStopRequested()) {
       break;
     }

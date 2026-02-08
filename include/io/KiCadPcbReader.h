@@ -335,10 +335,80 @@ private:
         }
       } else if (kw == "uuid" || kw == "tstamp") {
         footprint.uuid = child->getChild(1)->asString();
+      } else if (kw == "pad") {
+        parsePad(*child, footprint, pcb);
       }
     }
 
     pcb.footprints.push_back(footprint);
+  }
+
+  // Parse pad definition
+  static void parsePad(const SExprNode& node, KiCadFootprint& footprint, KiCadPcb& pcb) {
+    KiCadPad pad;
+    pad.x = pad.y = 0.0;
+    pad.sizeX = pad.sizeY = 0.0;
+    pad.drill = 0.0;
+    pad.layer = 0;  // F.Cu by default
+    pad.netNumber = 0;
+
+    // First child after keyword is the pad number
+    if (node.childCount() >= 2 && node.getChild(1)->isAtom()) {
+      pad.padNumber = node.getChild(1)->asString();
+    }
+
+    // Second child is the pad type
+    if (node.childCount() >= 3 && node.getChild(2)->isAtom()) {
+      pad.type = node.getChild(2)->asString();
+    }
+
+    // Third child is the shape
+    if (node.childCount() >= 4 && node.getChild(3)->isAtom()) {
+      pad.shape = node.getChild(3)->asString();
+    }
+
+    for (size_t i = 4; i < node.childCount(); i++) {
+      const auto* child = node.getChild(i);
+      if (!child->isList() || child->childCount() < 2) {
+        continue;
+      }
+
+      const std::string& kw = child->getChild(0)->asString();
+
+      if (kw == "at") {
+        if (child->childCount() >= 3) {
+          pad.x = child->getChild(1)->asDouble();
+          pad.y = child->getChild(2)->asDouble();
+        }
+      } else if (kw == "size") {
+        if (child->childCount() >= 3) {
+          pad.sizeX = child->getChild(1)->asDouble();
+          pad.sizeY = child->getChild(2)->asDouble();
+        }
+      } else if (kw == "drill") {
+        if (child->childCount() >= 2) {
+          pad.drill = child->getChild(1)->asDouble();
+        }
+      } else if (kw == "layers") {
+        // For simplicity, use the first layer listed
+        if (child->childCount() >= 2) {
+          std::string layerName = child->getChild(1)->asString();
+          for (int j = 0; j < pcb.layers.count(); j++) {
+            if (pcb.layers[j].name == layerName) {
+              pad.layer = j;
+              break;
+            }
+          }
+        }
+      } else if (kw == "net") {
+        if (child->childCount() >= 3) {
+          pad.netNumber = static_cast<int>(child->getChild(1)->asInt());
+          pad.netName = child->getChild(2)->asString();
+        }
+      }
+    }
+
+    footprint.pads.push_back(pad);
   }
 };
 

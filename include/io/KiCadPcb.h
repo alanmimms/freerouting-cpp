@@ -63,6 +63,19 @@ struct KiCadVia {
   std::string uuid;
 };
 
+// Pad from a footprint
+struct KiCadPad {
+  std::string padNumber;  // Pin number/name (can be "1", "2", "A1", etc.)
+  std::string type;        // thru_hole, smd, connect, np_thru_hole
+  std::string shape;       // circle, rect, oval, roundrect, etc.
+  double x, y;            // Position relative to footprint origin
+  double sizeX, sizeY;    // Pad dimensions
+  double drill;           // Drill diameter (0 for SMD)
+  int layer;              // Primary layer (0=F.Cu, 31=B.Cu, etc.)
+  int netNumber;          // Net this pad belongs to
+  std::string netName;    // Net name
+};
+
 // Footprint/module from KiCad PCB file
 struct KiCadFootprint {
   std::string reference;
@@ -70,7 +83,7 @@ struct KiCadFootprint {
   double x, y, rotation;
   int layer;
   std::string uuid;
-  // Simplified - full footprint parsing in future phases
+  std::vector<KiCadPad> pads;  // Pads within this footprint
 };
 
 // Complete KiCad PCB file representation

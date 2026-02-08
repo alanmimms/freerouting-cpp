@@ -84,14 +84,11 @@ public:
       }
     }
 
-    // Convert and add footprints (simplified - components)
-    // TODO: For now we skip footprints as they require pin/pad infrastructure
-    // for (const auto& footprint : kicadPcb.footprints) {
-    //   auto component = convertFootprintToComponent(footprint, itemId++, board.get());
-    //   if (component) {
-    //     board->addItem(std::unique_ptr<Item>(component.release()));
-    //   }
-    // }
+    // Convert and add footprint pads as pins
+    int componentNumber = 1;
+    for (const auto& footprint : kicadPcb.footprints) {
+      convertFootprintPads(footprint, componentNumber++, itemId, board.get());
+    }
 
     return {std::move(board), std::move(clearanceMatrix)};
   }
@@ -186,8 +183,54 @@ private:
     );
   }
 
-  // TODO: Convert KiCad footprint to Component
-  // Requires proper pin/pad infrastructure which is not yet implemented
+  // Convert footprint pads to pins
+  static void convertFootprintPads(const KiCadFootprint& footprint,
+                                    int componentNumber, int& itemId,
+                                    BasicBoard* board) {
+    int pinNumber = 0;
+    for (const auto& pad : footprint.pads) {
+      auto pin = convertPadToPin(pad, footprint, componentNumber, pinNumber++, itemId++, board);
+      if (pin) {
+        board->addItem(std::move(pin));
+      }
+    }
+  }
+
+  // Convert KiCad pad to Pin
+  static std::unique_ptr<Pin> convertPadToPin(const KiCadPad& pad,
+                                                const KiCadFootprint& footprint,
+                                                int componentNumber,
+                                                int pinNumber, int itemId,
+                                                BasicBoard* board) {
+    // Calculate absolute position (footprint position + pad offset)
+    IntPoint center = convertPoint(
+      footprint.x + pad.x,
+      footprint.y + pad.y
+    );
+
+    // Get net number
+    std::vector<int> nets;
+    if (pad.netNumber > 0) {
+      nets.push_back(pad.netNumber);
+    }
+
+    // Create a simple padstack for the pad
+    // Note: We allocate this on the heap and never delete it (memory leak)
+    // TODO: Proper padstack lifetime management
+    Padstack* padstack = new Padstack(
+      "pad_" + std::to_string(itemId),  // name
+      itemId,                            // number
+      pad.layer,                         // fromLayer (for now assume single layer)
+      pad.layer,                         // toLayer
+      true,                              // attachAllowed
+      false                              // placedAbsolute
+    );
+
+    return std::make_unique<Pin>(
+      center, pinNumber, padstack, nets, 0 /* clearanceClass */, itemId,
+      componentNumber, FixedState::SystemFixed, board
+    );
+  }
 };
 
 } // namespace freerouting

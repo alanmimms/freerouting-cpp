@@ -88,6 +88,12 @@ bool CommandLineArgs::parse(int argc, const char* argv[],
       args.verbosity = 3;
     } else if (arg == "--no-progress") {
       args.showProgress = false;
+    } else if (arg == "--heatmap") {
+      args.generateHeatmap = true;
+      // Optional: next arg could be heatmap filename
+      if (i + 1 < argc && argv[i + 1][0] != '-') {
+        args.heatmapFile = argv[++i];
+      }
     } else if (arg == "--dry-run") {
       args.dryRun = true;
     } else if (arg[0] == '-') {
@@ -127,6 +133,7 @@ void CommandLineArgs::printUsage(const char* programName) {
   std::cout << "  --verbose               Verbose output\n";
   std::cout << "  --debug                 Debug output\n";
   std::cout << "  --no-progress           Don't show progress indicator\n";
+  std::cout << "  --heatmap [FILE]        Generate congestion heatmap (SVG)\n";
   std::cout << "  --dry-run               Parse input but don't route or write output\n";
   std::cout << "\n";
   std::cout << "Examples:\n";

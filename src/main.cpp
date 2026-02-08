@@ -9,6 +9,7 @@
 #include "board/RouteOptimizer.h"
 #include "board/DrcEngine.h"
 #include "autoroute/BatchAutorouter.h"
+#include "visualization/CongestionHeatmap.h"
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -265,6 +266,67 @@ int main(int argc, const char* argv[]) {
     log(args.verbosity, 1, "  Items routed: " + std::to_string(stats.itemsRouted));
     log(args.verbosity, 1, "  Items failed: " + std::to_string(stats.itemsFailed));
     log(args.verbosity, 1, "  Time: " + std::to_string(stats.passDurationMs) + " ms");
+
+    // Step 2.5: Generate congestion heatmap if requested
+    if (args.generateHeatmap) {
+      log(args.verbosity, 1, "Generating congestion heatmap...");
+
+      CongestionHeatmap heatmap(board.get());
+      heatmap.analyze();
+
+      // Determine output filenames
+      std::string heatmapFile = args.heatmapFile;
+      std::string reportFile;
+
+      if (heatmapFile.empty()) {
+        // Use output filename with .heatmap.svg suffix
+        std::filesystem::path outputPath(args.outputFile);
+        std::string stem = outputPath.stem().string();
+        heatmapFile = stem + ".heatmap.svg";
+        reportFile = stem + ".heatmap.txt";
+
+        if (outputPath.has_parent_path()) {
+          heatmapFile = (outputPath.parent_path() / heatmapFile).string();
+          reportFile = (outputPath.parent_path() / reportFile).string();
+        }
+      } else {
+        // User provided heatmap filename - derive report filename
+        std::filesystem::path heatmapPath(heatmapFile);
+        std::string stem = heatmapPath.stem().string();
+        reportFile = stem + ".txt";
+
+        if (heatmapPath.has_parent_path()) {
+          reportFile = (heatmapPath.parent_path() / reportFile).string();
+        }
+      }
+
+      // Generate SVG heatmap (all layers averaged)
+      heatmap.generateSVG(heatmapFile, -1);
+      log(args.verbosity, 1, "  Heatmap SVG: " + heatmapFile);
+
+      // Generate text report
+      heatmap.generateReport(reportFile);
+      log(args.verbosity, 1, "  Heatmap report: " + reportFile);
+
+      // Show top 5 congested areas in verbose mode
+      if (args.verbosity >= 2) {
+        auto hotspots = heatmap.getMostCongestedAreas(5);
+        if (!hotspots.empty()) {
+          log(args.verbosity, 2, "  Top congested areas:");
+          for (size_t i = 0; i < hotspots.size(); ++i) {
+            const auto& [location, score] = hotspots[i];
+            log(args.verbosity, 2, "    " + std::to_string(i + 1) + ". (" +
+                std::to_string(location.x / 1000000.0) + "mm, " +
+                std::to_string(location.y / 1000000.0) + "mm) - Score: " +
+                std::to_string(score));
+          }
+        } else {
+          log(args.verbosity, 2, "  No significant congestion detected");
+        }
+      }
+
+      log(args.verbosity, 1, "Heatmap generated");
+    }
 
     // Step 3: Optimize routes
     if (args.optimize) {

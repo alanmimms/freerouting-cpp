@@ -26,6 +26,10 @@ struct CommandLineArgs {
   int verbosity = 1;  // 0=quiet, 1=normal, 2=verbose, 3=debug
   bool showProgress = true;
 
+  // Visualization
+  bool generateHeatmap = false;
+  std::string heatmapFile;  // If empty, use <output>.heatmap.svg
+
   // Mode
   bool versionOnly = false;
   bool helpOnly = false;

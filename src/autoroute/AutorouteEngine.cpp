@@ -2,6 +2,7 @@
 #include "autoroute/ExpansionDoor.h"
 #include "autoroute/MazeSearchAlgo.h"
 #include "autoroute/PathFinder.h"
+#include "autoroute/PushAndShove.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -101,18 +102,37 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createDirectRoute(
   auto conflicts = findConflictingItems(start, goal, layer, halfWidth, netNo);
 
   if (!conflicts.empty()) {
+    bool conflictsResolved = false;
+
     // If push-and-shove is enabled, try that first before ripup
     if (ctrl.pushAndShoveEnabled && ctrl.ripupAllowed) {
-      // Try push-and-shove with half the ripup budget (save rest for actual ripup)
-      // NOTE: Full push-and-shove implementation would be here
-      // For now, fall through to ripup
+      // Try push-and-shove with the full ripup budget
+      PushAndShove pusher(board);
+      auto pushResult = pusher.tryPushObstacles(
+        start, goal, layer, halfWidth, netNo, ripupCostLimit);
+
+      if (pushResult.success) {
+        // Push-and-shove succeeded - remove the obstacles it identified
+        for (Item* item : pushResult.removedItems) {
+          board->removeItem(item->getId());
+          rippedItems.push_back(item);
+
+          // Update ripup count
+          int itemId = item->getId();
+          ripupCounts[itemId]++;
+        }
+        conflictsResolved = true;
+      }
+      // If push-and-shove failed, fall through to regular ripup
     }
 
-    // Try to ripup conflicting items if within cost limit
-    bool ripupSuccess = ripupConflicts(conflicts, ripupCostLimit, rippedItems);
-    if (!ripupSuccess) {
-      // Can't ripup - routing failed
-      return AutorouteResult::NotRouted;
+    // If push-and-shove didn't resolve conflicts, try regular ripup
+    if (!conflictsResolved) {
+      bool ripupSuccess = ripupConflicts(conflicts, ripupCostLimit, rippedItems);
+      if (!ripupSuccess) {
+        // Can't ripup - routing failed
+        return AutorouteResult::NotRouted;
+      }
     }
   }
 

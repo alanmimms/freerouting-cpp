@@ -85,18 +85,40 @@ PushAndShove::PushResult PushAndShove::tryPushObstacles(
 
   // Try to remove or reroute each trace obstacle
   for (Trace* trace : traceObstacles) {
-    int removeCost = calculateRemoveCost(trace);
+    // First, try to reroute the trace around the obstacle
+    std::vector<Item*> reroutedTraces;
+    bool canReroute = tryRerouteTrace(trace, start, end, reroutedTraces);
 
-    // Check if removal is within budget
-    if (result.totalCost + removeCost <= ripupCostLimit) {
-      // Simple strategy: remove the trace
-      // In a full implementation, we'd try to reroute it first
-      result.removedItems.push_back(trace);
-      result.totalCost += removeCost;
+    if (canReroute && !reroutedTraces.empty()) {
+      // Rerouting succeeded - calculate cost as trace length difference
+      int rerouteCost = calculateRemoveCost(trace);  // Cost of removing original
+      result.movedItems.push_back(trace);
+      result.totalCost += rerouteCost / 2;  // Reroute is cheaper than removal
+
+      // Mark the new traces for addition
+      for (Item* newTrace : reroutedTraces) {
+        result.movedItems.push_back(newTrace);
+      }
     } else {
-      // Can't afford to remove this trace
-      result.success = false;
-      return result;
+      // Rerouting failed - try simple removal
+      int removeCost = calculateRemoveCost(trace);
+
+      // Check if removal is within budget
+      if (result.totalCost + removeCost <= ripupCostLimit) {
+        // Check if trace can be safely removed
+        if (canRemoveTrace(trace)) {
+          result.removedItems.push_back(trace);
+          result.totalCost += removeCost;
+        } else {
+          // Can't safely remove this trace
+          result.success = false;
+          return result;
+        }
+      } else {
+        // Can't afford to remove this trace
+        result.success = false;
+        return result;
+      }
     }
   }
 

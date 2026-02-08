@@ -90,9 +90,15 @@ bool CommandLineArgs::parse(int argc, const char* argv[],
       args.showProgress = false;
     } else if (arg == "--heatmap") {
       args.generateHeatmap = true;
-      // Optional: next arg could be heatmap filename
+      // Optional: next arg could be heatmap filename (must end with .svg or similar)
       if (i + 1 < argc && argv[i + 1][0] != '-') {
-        args.heatmapFile = argv[++i];
+        std::string nextArg = argv[i + 1];
+        // Only consume as heatmap filename if it looks like an output file
+        // (ends with .svg, .png, etc.) rather than an input file (.kicad_pcb, .dsn)
+        if (nextArg.find(".svg") != std::string::npos ||
+            nextArg.find(".png") != std::string::npos) {
+          args.heatmapFile = argv[++i];
+        }
       }
     } else if (arg == "--dry-run") {
       args.dryRun = true;

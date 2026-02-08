@@ -40,6 +40,7 @@ add_library(freerouting
   src/autoroute/AutorouteEngine.cpp
   src/autoroute/MazeSearchAlgo.cpp
   src/autoroute/BatchAutorouter.cpp
+  src/autoroute/PushAndShove.cpp
   src/board/DrcEngine.cpp
   src/cli/CommandLineArgs.cpp
   src/io/DsnReader.cpp

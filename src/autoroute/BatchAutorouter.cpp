@@ -223,11 +223,13 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
       // Skip power/ground nets (common patterns)
       if (netName == "GND" || netName == "GNDA" || netName == "GNDD" ||
           netName == "VCC" || netName == "VDD" || netName == "VSS" ||
+          netName == "VBUS" ||
           netName.find("GND") != std::string::npos ||
           netName.find("+3V") != std::string::npos ||
           netName.find("+5V") != std::string::npos ||
           netName.find("+12V") != std::string::npos ||
-          netName.find("-12V") != std::string::npos) {
+          netName.find("-12V") != std::string::npos ||
+          netName.find("VA") != std::string::npos) {
         return AutorouteAttemptResult(AutorouteAttemptState::Skipped,
           "Power/ground net (needs copper pour)");
       }
@@ -348,11 +350,13 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
       // Skip power/ground nets (common patterns)
       if (netName == "GND" || netName == "GNDA" || netName == "GNDD" ||
           netName == "VCC" || netName == "VDD" || netName == "VSS" ||
+          netName == "VBUS" ||
           netName.find("GND") != std::string::npos ||
           netName.find("+3V") != std::string::npos ||
           netName.find("+5V") != std::string::npos ||
           netName.find("+12V") != std::string::npos ||
-          netName.find("-12V") != std::string::npos) {
+          netName.find("-12V") != std::string::npos ||
+          netName.find("VA") != std::string::npos) {
         return AutorouteAttemptResult(AutorouteAttemptState::Skipped,
           "Power/ground net (needs copper pour)");
       }

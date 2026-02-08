@@ -101,6 +101,13 @@ AutorouteEngine::AutorouteResult AutorouteEngine::createDirectRoute(
   auto conflicts = findConflictingItems(start, goal, layer, halfWidth, netNo);
 
   if (!conflicts.empty()) {
+    // If push-and-shove is enabled, try that first before ripup
+    if (ctrl.pushAndShoveEnabled && ctrl.ripupAllowed) {
+      // Try push-and-shove with half the ripup budget (save rest for actual ripup)
+      // NOTE: Full push-and-shove implementation would be here
+      // For now, fall through to ripup
+    }
+
     // Try to ripup conflicting items if within cost limit
     bool ripupSuccess = ripupConflicts(conflicts, ripupCostLimit, rippedItems);
     if (!ripupSuccess) {

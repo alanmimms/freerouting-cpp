@@ -77,6 +77,9 @@ public:
   int ripupCosts;
   int ripupPassNo;
 
+  // Push-and-shove settings
+  bool pushAndShoveEnabled;  // Enable push-and-shove routing
+
   // Maximum iterations for A* search
   int maxIterations;
 
@@ -140,6 +143,7 @@ public:
       ripupAllowed(true),   // Enable ripup by default
       ripupCosts(1000),      // Allow ripup up to 10 items (100 * 10)
       ripupPassNo(0),
+      pushAndShoveEnabled(true),  // Enable push-and-shove by default
       maxIterations(100000),  // Default 100k iterations
       isFanout(false),
       removeUnconnectedVias(true),

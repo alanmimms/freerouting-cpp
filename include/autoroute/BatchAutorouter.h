@@ -86,6 +86,12 @@ private:
     std::vector<Item*>& rippedItems,
     int ripupPassNo);
 
+  // Route a multi-pad net using MST (Minimum Spanning Tree) algorithm
+  AutorouteAttemptResult autorouteNetWithMST(
+    const std::vector<Item*>& netItems,
+    int netNo,
+    int ripupPassNo);
+
   // Calculate airline distance between two item sets
   // Used for progress indication
   double calculateAirlineDistance(

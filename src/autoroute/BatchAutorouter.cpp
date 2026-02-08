@@ -1,11 +1,13 @@
 #include "autoroute/BatchAutorouter.h"
 #include "autoroute/Connection.h"
 #include "autoroute/AutorouteEngine.h"
+#include "autoroute/MSTRouter.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <map>
 
 namespace freerouting {
 
@@ -65,56 +67,95 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     progressDisplay->message("Items to route: " + std::to_string(itemIdsToRoute.size()));
   }
 
-  // Route each item (looked up by ID to avoid pointer invalidation)
+  // Group items by net for MST routing
+  std::map<int, std::vector<Item*>> itemsByNet;
+
   for (int itemId : itemIdsToRoute) {
+    Item* item = board->getItem(itemId);
+    if (!item) continue;
+
+    const std::vector<int>& nets = item->getNets();
+    for (int netNo : nets) {
+      itemsByNet[netNo].push_back(item);
+    }
+  }
+
+  // Route each net
+  for (const auto& netPair : itemsByNet) {
     if (stoppable && stoppable->isStopRequested()) {
       break;
     }
 
-    // Look up item by ID (safe even if items_ vector has been reallocated)
-    Item* item = board->getItem(itemId);
-    if (!item) {
-      // Item may have been removed/merged during routing - skip it
-      ++lastPassStats.itemsSkipped;
+    int netNo = netPair.first;
+    const std::vector<Item*>& netItems = netPair.second;
+
+    // Skip empty nets
+    if (netItems.empty()) {
       continue;
     }
 
-    // Get nets for this item
-    const std::vector<int>& nets = item->getNets();
-    for (int netNo : nets) {
-      if (stoppable && stoppable->isStopRequested()) {
-        break;
-      }
-
-      // Route this item on this net
-      std::vector<Item*> rippedItems;
-      AutorouteAttemptResult result = autorouteItem(
-        item, netNo, rippedItems, passNumber);
-
-      lastPassStats.itemsRipped += static_cast<int>(rippedItems.size());
+    // For multi-pad nets (>2 items), use MST routing
+    if (netItems.size() > 2) {
+      AutorouteAttemptResult result = autorouteNetWithMST(
+        netItems, netNo, passNumber);
 
       // Update statistics based on result
       switch (result.state) {
         case AutorouteAttemptState::Routed:
-          ++lastPassStats.itemsRouted;
+          lastPassStats.itemsRouted += static_cast<int>(netItems.size());
           if (progressDisplay) {
-            progressDisplay->itemRouted("Net " + std::to_string(netNo));
+            progressDisplay->itemRouted("Net " + std::to_string(netNo) +
+              " (MST: " + std::to_string(netItems.size()) + " pads)");
           }
           break;
 
-        case AutorouteAttemptState::AlreadyConnected:
-        case AutorouteAttemptState::NoUnconnectedNets:
-        case AutorouteAttemptState::ConnectedToPlane:
         case AutorouteAttemptState::Skipped:
-          ++lastPassStats.itemsSkipped;
+          lastPassStats.itemsSkipped += static_cast<int>(netItems.size());
           break;
 
         default:
-          ++lastPassStats.itemsFailed;
+          lastPassStats.itemsFailed += static_cast<int>(netItems.size());
           if (progressDisplay) {
             progressDisplay->itemFailed(result.details);
           }
           break;
+      }
+    } else {
+      // For simple 2-pad nets, use existing point-to-point routing
+      for (Item* item : netItems) {
+        if (stoppable && stoppable->isStopRequested()) {
+          break;
+        }
+
+        std::vector<Item*> rippedItems;
+        AutorouteAttemptResult result = autorouteItem(
+          item, netNo, rippedItems, passNumber);
+
+        lastPassStats.itemsRipped += static_cast<int>(rippedItems.size());
+
+        // Update statistics based on result
+        switch (result.state) {
+          case AutorouteAttemptState::Routed:
+            ++lastPassStats.itemsRouted;
+            if (progressDisplay) {
+              progressDisplay->itemRouted("Net " + std::to_string(netNo));
+            }
+            break;
+
+          case AutorouteAttemptState::AlreadyConnected:
+          case AutorouteAttemptState::NoUnconnectedNets:
+          case AutorouteAttemptState::ConnectedToPlane:
+          case AutorouteAttemptState::Skipped:
+            ++lastPassStats.itemsSkipped;
+            break;
+
+          default:
+            ++lastPassStats.itemsFailed;
+            if (progressDisplay) {
+              progressDisplay->itemFailed(result.details);
+            }
+            break;
+        }
       }
     }
   }
@@ -258,6 +299,111 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   } else {
     return AutorouteAttemptResult(AutorouteAttemptState::Failed,
       "Pathfinding failed");
+  }
+}
+
+AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
+    const std::vector<Item*>& netItems,
+    int netNo,
+    int ripupPassNo) {
+
+  if (!board || netItems.empty()) {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed, "No board or items");
+  }
+
+  // Check if this is a power/ground net - skip for now
+  const Nets* nets = board->getNets();
+  if (nets) {
+    const Net* net = nets->getNet(netNo);
+    if (net) {
+      std::string netName = net->getName();
+      // Skip power/ground nets (common patterns)
+      if (netName == "GND" || netName == "GNDA" || netName == "GNDD" ||
+          netName == "VCC" || netName == "VDD" || netName == "VSS" ||
+          netName.find("GND") != std::string::npos ||
+          netName.find("+3V") != std::string::npos ||
+          netName.find("+5V") != std::string::npos ||
+          netName.find("+12V") != std::string::npos ||
+          netName.find("-12V") != std::string::npos) {
+        return AutorouteAttemptResult(AutorouteAttemptState::Skipped,
+          "Power/ground net (needs copper pour)");
+      }
+    }
+  }
+
+  // Build MST for this net
+  std::vector<MSTRouter::MSTEdge> mstEdges = MSTRouter::buildMST(netItems);
+
+  if (mstEdges.empty()) {
+    return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
+      "No edges to route (single item or already connected)");
+  }
+
+  // Sort edges by cost (route shortest connections first)
+  MSTRouter::sortEdgesByCost(mstEdges);
+
+  // Route each MST edge
+  int routedEdges = 0;
+  int failedEdges = 0;
+
+  for (const auto& edge : mstEdges) {
+    if (stoppable && stoppable->isStopRequested()) {
+      break;
+    }
+
+    // Use AutorouteEngine for pathfinding
+    AutorouteEngine engine(board);
+    engine.initConnection(netNo, nullptr, nullptr);
+
+    // Create AutorouteControl with routing parameters
+    AutorouteControl control(board->getLayers().count());
+
+    // Set trace widths for all layers (default 0.25mm = 1250 half-width)
+    for (int i = 0; i < control.layerCount; ++i) {
+      control.traceHalfWidth[i] = 1250;
+    }
+
+    // Configure ripup settings
+    control.ripupAllowed = true;
+    control.ripupCosts = config.startRipupCosts * std::max(1, ripupPassNo);
+    control.ripupPassNo = ripupPassNo;
+
+    // Dynamic iteration limit based on net complexity
+    const auto& connections = board->getIncompleteConnections();
+    int netConnectionCount = 0;
+    for (const auto& conn : connections) {
+      if (conn.getNetNumber() == netNo) {
+        netConnectionCount++;
+      }
+    }
+    control.maxIterations = 50000 + static_cast<int>(5000 * std::sqrt(std::max(1, netConnectionCount)));
+
+    // Route this edge
+    std::vector<Item*> startSet{edge.from};
+    std::vector<Item*> destSet{edge.to};
+    std::vector<Item*> rippedItems;
+
+    auto result = engine.autorouteConnection(startSet, destSet, control, rippedItems);
+
+    if (result == AutorouteEngine::AutorouteResult::Routed ||
+        result == AutorouteEngine::AutorouteResult::AlreadyConnected) {
+      board->markConnectionRouted(edge.from, edge.to, netNo);
+      routedEdges++;
+    } else {
+      failedEdges++;
+    }
+  }
+
+  // Determine overall result
+  if (failedEdges == 0) {
+    return AutorouteAttemptResult(AutorouteAttemptState::Routed,
+      "MST: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdges.size()) + " edges");
+  } else if (routedEdges > 0) {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed,
+      "MST partial: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdges.size()) + " edges");
+  } else {
+    return AutorouteAttemptResult(AutorouteAttemptState::Failed,
+      "MST failed: no edges routed");
   }
 }
 

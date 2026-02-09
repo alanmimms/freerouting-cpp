@@ -14,6 +14,9 @@
 
 namespace freerouting {
 
+// Forward declaration for KiCadFootprint (defined in io/KiCadPcb.h)
+struct KiCadFootprint;
+
 // Extended board with routing capabilities
 // Provides infrastructure for autorouting including:
 // - Incomplete connection tracking
@@ -165,9 +168,19 @@ public:
 
   }
 
+  // Footprint graphics storage (for visualization)
+  void setFootprints(std::shared_ptr<const std::vector<struct KiCadFootprint>> footprints) {
+    footprints_ = footprints;
+  }
+
+  std::shared_ptr<const std::vector<struct KiCadFootprint>> getFootprints() const {
+    return footprints_;
+  }
+
 private:
   ShapeTree shapeTree_;  // Spatial index for routing queries
   std::vector<IncompleteConnection> incompleteConnections_;  // Connections to route
+  std::shared_ptr<const std::vector<struct KiCadFootprint>> footprints_;  // Footprint graphics (courtyards, silkscreen)
 
   // Find connected components within a set of items on the same net
   // Returns a vector of components, where each component is a vector of connected items

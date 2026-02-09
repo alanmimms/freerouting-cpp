@@ -117,6 +117,8 @@ private:
   // Rendering functions
   void renderBackground();
   void renderGrid();
+  void renderBoardOutline();
+  void renderComponents();
   void renderPads();
   void renderTraces();
   void renderVias();

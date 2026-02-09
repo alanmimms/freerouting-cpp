@@ -90,6 +90,10 @@ public:
       convertFootprintPads(footprint, componentNumber++, itemId, board.get());
     }
 
+    // Store footprints for visualization (courtyards, silkscreen)
+    auto footprintsPtr = std::make_shared<std::vector<KiCadFootprint>>(kicadPcb.footprints);
+    board->setFootprints(footprintsPtr);
+
     return {std::move(board), std::move(clearanceMatrix)};
   }
 

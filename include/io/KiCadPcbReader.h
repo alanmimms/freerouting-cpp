@@ -337,6 +337,10 @@ private:
         footprint.uuid = child->getChild(1)->asString();
       } else if (kw == "pad") {
         parsePad(*child, footprint, pcb);
+      } else if (kw == "fp_line") {
+        parseFpLine(*child, footprint);
+      } else if (kw == "fp_text") {
+        parseFpText(*child, footprint);
       }
     }
 
@@ -409,6 +413,101 @@ private:
     }
 
     footprint.pads.push_back(pad);
+  }
+
+  // Parse fp_line (graphical line in footprint)
+  // Format: (fp_line (start x1 y1) (end x2 y2) (layer LayerName) (width w))
+  static void parseFpLine(const SExprNode& node, KiCadFootprint& footprint) {
+    KiCadFpLine line;
+    line.startX = line.startY = line.endX = line.endY = 0.0;
+    line.width = 0.1;  // Default width
+
+    for (size_t i = 1; i < node.childCount(); i++) {
+      const auto* child = node.getChild(i);
+      if (!child->isList() || child->childCount() < 2) {
+        continue;
+      }
+
+      const std::string& kw = child->getChild(0)->asString();
+
+      if (kw == "start" && child->childCount() >= 3) {
+        line.startX = child->getChild(1)->asDouble();
+        line.startY = child->getChild(2)->asDouble();
+      } else if (kw == "end" && child->childCount() >= 3) {
+        line.endX = child->getChild(1)->asDouble();
+        line.endY = child->getChild(2)->asDouble();
+      } else if (kw == "layer" && child->childCount() >= 2) {
+        line.layer = child->getChild(1)->asString();
+      } else if (kw == "width" && child->childCount() >= 2) {
+        line.width = child->getChild(1)->asDouble();
+      }
+    }
+
+    footprint.fpLines.push_back(line);
+  }
+
+  // Parse fp_text (text in footprint)
+  // Format: (fp_text type "text" (at x y rotation) (layer LayerName) (effects (font (size s1 s2) (thickness t))))
+  static void parseFpText(const SExprNode& node, KiCadFootprint& footprint) {
+    KiCadFpText text;
+    text.x = text.y = text.rotation = 0.0;
+    text.fontSize = 1.0;
+    text.thickness = 0.15;
+
+    // First child after keyword is type (reference, value, user)
+    if (node.childCount() >= 2 && node.getChild(1)->isAtom()) {
+      text.type = node.getChild(1)->asString();
+    }
+
+    // Second child is the text string
+    if (node.childCount() >= 3 && node.getChild(2)->isAtom()) {
+      text.text = node.getChild(2)->asString();
+    }
+
+    for (size_t i = 3; i < node.childCount(); i++) {
+      const auto* child = node.getChild(i);
+      if (!child->isList() || child->childCount() < 2) {
+        continue;
+      }
+
+      const std::string& kw = child->getChild(0)->asString();
+
+      if (kw == "at") {
+        if (child->childCount() >= 3) {
+          text.x = child->getChild(1)->asDouble();
+          text.y = child->getChild(2)->asDouble();
+          if (child->childCount() >= 4) {
+            text.rotation = child->getChild(3)->asDouble();
+          }
+        }
+      } else if (kw == "layer" && child->childCount() >= 2) {
+        text.layer = child->getChild(1)->asString();
+      } else if (kw == "effects") {
+        // Parse effects for font size and thickness
+        for (size_t j = 1; j < child->childCount(); j++) {
+          const auto* effect = child->getChild(j);
+          if (!effect->isList() || effect->childCount() < 2) {
+            continue;
+          }
+          if (effect->getChild(0)->asString() == "font") {
+            for (size_t k = 1; k < effect->childCount(); k++) {
+              const auto* fontParam = effect->getChild(k);
+              if (!fontParam->isList() || fontParam->childCount() < 2) {
+                continue;
+              }
+              const std::string& fontKw = fontParam->getChild(0)->asString();
+              if (fontKw == "size" && fontParam->childCount() >= 3) {
+                text.fontSize = fontParam->getChild(1)->asDouble();
+              } else if (fontKw == "thickness" && fontParam->childCount() >= 2) {
+                text.thickness = fontParam->getChild(1)->asDouble();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    footprint.fpTexts.push_back(text);
   }
 };
 

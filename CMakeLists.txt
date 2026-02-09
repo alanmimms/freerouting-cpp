@@ -30,6 +30,10 @@ add_compile_options(
 set(FREEROUTING_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(FREEROUTING_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Find SDL2
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SDL2 REQUIRED sdl2)
+
 # Main library
 add_library(freerouting
   src/autoroute/ExpansionDoor.cpp
@@ -46,9 +50,10 @@ add_library(freerouting
   src/io/DsnReader.cpp
   src/io/DsnBoardConverter.cpp
   src/visualization/CongestionHeatmap.cpp
+  src/visualization/BoardRenderer.cpp
 )
-target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR})
-target_link_libraries(freerouting PUBLIC pthread)
+target_include_directories(freerouting PUBLIC ${FREEROUTING_INCLUDE_DIR} ${SDL2_INCLUDE_DIRS})
+target_link_libraries(freerouting PUBLIC pthread ${SDL2_LIBRARIES})
 
 # Main executable
 add_executable(freerouting-cli

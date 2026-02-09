@@ -10,11 +10,14 @@
 #include "board/DrcEngine.h"
 #include "autoroute/BatchAutorouter.h"
 #include "visualization/CongestionHeatmap.h"
+#include "visualization/BoardRenderer.h"
 #include <iostream>
 #include <fstream>
 #include <thread>
 #include <filesystem>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 
 using namespace freerouting;
 
@@ -221,6 +224,45 @@ int main(int argc, const char* argv[]) {
     log(args.verbosity, 2, "  Board items: " + std::to_string(board->itemCount()));
     log(args.verbosity, 1, "Routing board created");
 
+    // Step 1.5: Initialize visualization if requested
+    std::atomic<bool> visualizationActive{false};
+    std::thread visualizationThread;
+
+    if (args.visualize) {
+      log(args.verbosity, 1, "Starting visualization thread...");
+      visualizationActive = true;
+
+      // Create visualization in its own thread (SDL2 requirement)
+      visualizationThread = std::thread([board_ptr = board.get(), &args, &visualizationActive]() {
+        // Create renderer in visualization thread
+        BoardRenderer renderer(board_ptr, "FreeRouting - " + args.inputFile);
+
+        if (!renderer.initialize()) {
+          std::cerr << "Warning: Failed to initialize SDL2 visualization" << std::endl;
+          visualizationActive = false;
+          return;
+        }
+
+        std::cout << "Visualization initialized" << std::endl;
+        std::cout << "Controls: +/- zoom, arrows pan, C congestion, F failures, N none, Q quit" << std::endl;
+
+        // Visualization event/render loop
+        while (visualizationActive) {
+          if (!renderer.processEvents()) {
+            visualizationActive = false;
+            break;
+          }
+          renderer.render();
+          std::this_thread::sleep_for(std::chrono::milliseconds(33));  // ~30 FPS
+        }
+
+        renderer.shutdown();
+      });
+
+      // Give visualization thread time to initialize
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
     // Step 1.75: Find incomplete connections (what needs routing)
     log(args.verbosity, 1, "Analyzing connections...");
     board->updateIncompleteConnections();
@@ -252,7 +294,7 @@ int main(int argc, const char* argv[]) {
 
     log(args.verbosity, 2, "  Max passes: " + std::to_string(config.maxPasses));
 
-    // Run routing batch loop
+    // Run routing batch loop (in main thread)
     bool completelyRouted = autorouter.runBatchLoop(nullptr);
 
     // Show routing summary
@@ -430,6 +472,18 @@ int main(int argc, const char* argv[]) {
     }
 
     log(args.verbosity, 1, "Output written successfully");
+
+    // Cleanup visualization thread
+    if (args.visualize && visualizationThread.joinable()) {
+      if (visualizationActive) {
+        log(args.verbosity, 1, "Routing complete. Visualization still active. Press Q to close.");
+        // Wait for user to close visualization window
+        visualizationThread.join();
+      } else {
+        // Visualization already closed
+        visualizationThread.join();
+      }
+    }
 
     // Success
     log(args.verbosity, 1, "Done!");

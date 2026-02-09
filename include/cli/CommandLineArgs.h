@@ -29,6 +29,7 @@ struct CommandLineArgs {
   // Visualization
   bool generateHeatmap = false;
   std::string heatmapFile;  // If empty, use <output>.heatmap.svg
+  bool visualize = false;   // Enable real-time SDL2 visualization
 
   // Mode
   bool versionOnly = false;

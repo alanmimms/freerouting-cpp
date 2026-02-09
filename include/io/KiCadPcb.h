@@ -76,6 +76,25 @@ struct KiCadPad {
   std::string netName;    // Net name
 };
 
+// Graphical line in a footprint (fp_line)
+struct KiCadFpLine {
+  double startX, startY;
+  double endX, endY;
+  std::string layer;      // "F.SilkS", "B.SilkS", "F.CrtYd", "B.CrtYd", "F.Fab", etc.
+  double width;
+};
+
+// Graphical text in a footprint (fp_text)
+struct KiCadFpText {
+  std::string type;       // "reference", "value", "user"
+  std::string text;
+  double x, y;
+  std::string layer;
+  double fontSize;
+  double thickness;
+  double rotation;
+};
+
 // Footprint/module from KiCad PCB file
 struct KiCadFootprint {
   std::string reference;
@@ -83,7 +102,9 @@ struct KiCadFootprint {
   double x, y, rotation;
   int layer;
   std::string uuid;
-  std::vector<KiCadPad> pads;  // Pads within this footprint
+  std::vector<KiCadPad> pads;          // Pads within this footprint
+  std::vector<KiCadFpLine> fpLines;    // Graphical lines (silkscreen, courtyard, fab)
+  std::vector<KiCadFpText> fpTexts;    // Text elements
 };
 
 // Complete KiCad PCB file representation

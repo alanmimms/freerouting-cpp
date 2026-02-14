@@ -20,9 +20,23 @@ namespace KiCadColors {
   constexpr SDL_Color Background{26, 26, 26, 255};        // Dark gray background
   constexpr SDL_Color Grid{50, 50, 50, 255};             // Subtle grid
   constexpr SDL_Color BoardEdge{180, 180, 50, 255};      // Muted yellow-green board outline
-  constexpr SDL_Color CopperFront{200, 52, 52, 255};     // Red for F.Cu
-  constexpr SDL_Color CopperBack{0, 132, 0, 255};        // Green for B.Cu
-  constexpr SDL_Color CopperInner{200, 200, 0, 255};     // Yellow for inner layers
+
+  // Layer colors matching KiCad PCB standard (top to bottom):
+  // Layer 0 (F.Cu):   red
+  // Layer 1:          sea green
+  // Layer 2:          dark orange
+  // Layer 3:          cyan
+  // Layer 4:          pink
+  // Layer 5 (B.Cu):   light blue
+  constexpr SDL_Color LayerColors[6] = {
+    {200, 52, 52, 255},      // Layer 0: Red (F.Cu)
+    {46, 139, 87, 255},      // Layer 1: Sea green
+    {255, 140, 0, 255},      // Layer 2: Dark orange
+    {0, 255, 255, 255},      // Layer 3: Cyan
+    {255, 192, 203, 255},    // Layer 4: Pink
+    {173, 216, 230, 255}     // Layer 5: Light blue (B.Cu)
+  };
+
   constexpr SDL_Color PadCopper{220, 200, 80, 255};      // Brighter gold for pads
   constexpr SDL_Color PadHole{50, 50, 50, 255};          // Dark for holes
   constexpr SDL_Color Via{236, 236, 236, 255};           // Light gray for vias
@@ -458,8 +472,6 @@ void BoardRenderer::renderPads() {
     SDL_Color outlineColor = {180, 180, 180, 255};  // Light gray outline
 
     const auto& items = board_->getItems();
-    const auto& layers = board_->getLayers();
-    int lastLayer = layers.count() - 1;
 
     for (size_t i = 0; i < items.size(); ++i) {
       if (!items[i]) continue;  // Safety check
@@ -489,12 +501,13 @@ void BoardRenderer::renderPads() {
       // Determine pad color based on layer (same as traces)
       int layer = pin->firstLayer();
       SDL_Color padColor;
-      if (layer == 0) {
-        padColor = KiCadColors::CopperFront;  // F.Cu (red)
-      } else if (layer == lastLayer) {
-        padColor = KiCadColors::CopperBack;   // B.Cu (green)
+
+      // Use the KiCad standard color array (supports up to 6 layers)
+      if (layer >= 0 && layer < 6) {
+        padColor = KiCadColors::LayerColors[layer];
       } else {
-        padColor = KiCadColors::CopperInner;  // Inner layers (yellow)
+        // For boards with more than 6 layers, cycle through colors
+        padColor = KiCadColors::LayerColors[layer % 6];
       }
 
       // Draw copper pad as filled rectangle (approximation of circle)
@@ -676,12 +689,13 @@ void BoardRenderer::drawTrace(const Trace* trace) {
   // Get layer-appropriate color (KiCad style)
   int layer = trace->getLayer();
   SDL_Color color;
-  if (layer == 0) {
-    color = KiCadColors::CopperFront;  // F.Cu (red)
-  } else if (layer == board_->getLayers().count() - 1) {
-    color = KiCadColors::CopperBack;   // B.Cu (green)
+
+  // Use the KiCad standard color array (supports up to 6 layers)
+  if (layer >= 0 && layer < 6) {
+    color = KiCadColors::LayerColors[layer];
   } else {
-    color = KiCadColors::CopperInner;  // Inner layers (yellow)
+    // For boards with more than 6 layers, cycle through colors
+    color = KiCadColors::LayerColors[layer % 6];
   }
 
   SDL_SetRenderDrawColor(renderer_, color.r, color.g, color.b, color.a);

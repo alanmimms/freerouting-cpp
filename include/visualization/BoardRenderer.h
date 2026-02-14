@@ -68,8 +68,8 @@ public:
   void setActiveLayer(int layer) { activeLayer_ = layer; }
 
   // Zoom and pan controls
-  void zoomIn() { config_.zoomLevel *= 1.2; }
-  void zoomOut() { config_.zoomLevel /= 1.2; }
+  void zoomIn(SDL_Point mousePos);
+  void zoomOut(SDL_Point mousePos);
   void pan(int dx, int dy) {
     config_.panOffset.x += dx;
     config_.panOffset.y += dy;

@@ -3,6 +3,7 @@
 #include "autoroute/MazeSearchAlgo.h"
 #include "autoroute/PathFinder.h"
 #include "autoroute/PushAndShove.h"
+#include "autoroute/LayerCostAnalyzer.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -60,8 +61,44 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   // Calculate ripup cost limit (increases with pass number if ripup allowed)
   int ripupCostLimit = ctrl.ripupAllowed ? ctrl.ripupCosts : 0;
 
+  // INTELLIGENT LAYER SELECTION
+  // Instead of just using startLayer/destLayer, analyze which layer is best for routing
+  int routingLayer = startLayer;
+
+  // If both items allow multiple layers (vias/through-hole pads), choose intelligently
+  bool startMultilayer = (startSet[0]->lastLayer() > startSet[0]->firstLayer());
+  bool destMultilayer = (destSet[0]->lastLayer() > destSet[0]->firstLayer());
+
+  if (startMultilayer || destMultilayer) {
+    // Analyze layer congestion in the routing region
+    IntBox routingRegion(
+      std::min(start.x, goal.x) - 1000000,  // 1mm margin
+      std::min(start.y, goal.y) - 1000000,
+      std::max(start.x, goal.x) + 1000000,
+      std::max(start.y, goal.y) + 1000000
+    );
+
+    LayerCostAnalyzer layerAnalyzer(board);
+    layerAnalyzer.analyze();
+
+    // Find best layer in the routing region
+    int bestLayer = layerAnalyzer.findBestLayerInRegion(routingRegion);
+
+    // If one endpoint is single-layer, prefer that layer to avoid unnecessary via
+    if (!startMultilayer && startLayer != destLayer) {
+      // Start is fixed layer, dest can move - route on start layer then via to dest
+      routingLayer = startLayer;
+    } else if (!destMultilayer && startLayer != destLayer) {
+      // Dest is fixed layer, start can move - via from start then route on dest layer
+      routingLayer = destLayer;
+    } else {
+      // Both flexible or both on same layer - use best available layer
+      routingLayer = bestLayer;
+    }
+  }
+
   // Check if we need layer transition
-  bool needsVia = (startLayer != destLayer);
+  bool needsVia = (routingLayer != startLayer) || (routingLayer != destLayer);
 
   if (!needsVia) {
     // Same layer routing - use adaptive pathfinding
@@ -69,23 +106,60 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
 
     // First attempt: Coarse grid (1000 units = 0.1mm) for speed
     PathFinder coarsePathFinder(1000);
-    auto pathResult = coarsePathFinder.findPath(*board, start, goal, startLayer, netNo);
+    auto pathResult = coarsePathFinder.findPath(*board, start, goal, routingLayer, netNo);
 
     // If coarse grid failed, retry with finer grid (500 units = 0.05mm)
     if (!pathResult.found) {
       PathFinder finePathFinder(500);
-      pathResult = finePathFinder.findPath(*board, start, goal, startLayer, netNo);
+      pathResult = finePathFinder.findPath(*board, start, goal, routingLayer, netNo);
+    }
+
+    // If pathfinding failed on preferred layer and both items are multilayer,
+    // try alternative layers before giving up
+    if (!pathResult.found && startMultilayer && destMultilayer) {
+      int numLayers = board->getLayers().count();
+
+      // Try each layer from least to most congested
+      LayerCostAnalyzer layerAnalyzer(board);
+      layerAnalyzer.analyze();
+
+      std::vector<std::pair<int, double>> layerCosts;
+      for (int layer = 0; layer < numLayers; ++layer) {
+        if (layer != routingLayer) {  // Skip the one we already tried
+          layerCosts.push_back({layer, layerAnalyzer.getLayerCost(layer)});
+        }
+      }
+
+      // Sort by cost (lowest first)
+      std::sort(layerCosts.begin(), layerCosts.end(),
+                [](const auto& a, const auto& b) { return a.second < b.second; });
+
+      // Try up to 2 alternative layers
+      for (size_t i = 0; i < std::min(size_t(2), layerCosts.size()); ++i) {
+        int altLayer = layerCosts[i].first;
+
+        PathFinder altPathFinder(1000);
+        auto altResult = altPathFinder.findPath(*board, start, goal, altLayer, netNo);
+
+        if (altResult.found && altResult.points.size() >= 2) {
+          // Found a route on alternative layer! Use it with vias at endpoints
+          routingLayer = altLayer;
+          pathResult = altResult;
+          needsVia = (routingLayer != startLayer) || (routingLayer != destLayer);
+          break;
+        }
+      }
     }
 
     if (!pathResult.found || pathResult.points.size() < 2) {
-      return createDirectRoute(start, goal, startLayer, ctrl, ripupCostLimit, rippedItems);
+      return createDirectRoute(start, goal, routingLayer, ctrl, ripupCostLimit, rippedItems);
     }
 
-    return createTracesFromPath(pathResult.points, startLayer, ctrl, ripupCostLimit, rippedItems);
+    return createTracesFromPath(pathResult.points, routingLayer, ctrl, ripupCostLimit, rippedItems);
   }
 
   // Multi-layer routing with via insertion
-  return routeWithVia(start, goal, startLayer, destLayer, ctrl, ripupCostLimit, rippedItems);
+  return routeWithVia(start, goal, routingLayer, destLayer, ctrl, ripupCostLimit, rippedItems);
 }
 
 // Helper: Create direct route (fallback when pathfinding fails)

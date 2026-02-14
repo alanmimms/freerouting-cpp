@@ -148,15 +148,21 @@ bool BoardRenderer::processEvents() {
             return false;
 
           case SDLK_EQUALS:
-          case SDLK_PLUS:
-            zoomIn();
+          case SDLK_PLUS: {
+            // Zoom centered on window center for keyboard zoom
+            SDL_Point center = {config_.windowWidth / 2, config_.windowHeight / 2};
+            zoomIn(center);
             needsRedraw_ = true;
             break;
+          }
 
-          case SDLK_MINUS:
-            zoomOut();
+          case SDLK_MINUS: {
+            // Zoom centered on window center for keyboard zoom
+            SDL_Point center = {config_.windowWidth / 2, config_.windowHeight / 2};
+            zoomOut(center);
             needsRedraw_ = true;
             break;
+          }
 
           case SDLK_c:
             setOverlayMode(OverlayMode::Congestion);
@@ -222,14 +228,18 @@ bool BoardRenderer::processEvents() {
         }
         break;
 
-      case SDL_MOUSEWHEEL:
+      case SDL_MOUSEWHEEL: {
+        int mouseX, mouseY;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        SDL_Point mousePos = {mouseX, mouseY};
         if (event.wheel.y > 0) {
-          zoomIn();
+          zoomIn(mousePos);
         } else if (event.wheel.y < 0) {
-          zoomOut();
+          zoomOut(mousePos);
         }
         needsRedraw_ = true;
         break;
+      }
 
       case SDL_MOUSEBUTTONDOWN:
         if (event.button.button == SDL_BUTTON_RIGHT) {
@@ -444,10 +454,13 @@ void BoardRenderer::renderComponents() {
 
 void BoardRenderer::renderPads() {
   try {
-    auto& padColor = KiCadColors::PadCopper;
     auto& holeColor = KiCadColors::PadHole;
+    SDL_Color outlineColor = {180, 180, 180, 255};  // Light gray outline
 
     const auto& items = board_->getItems();
+    const auto& layers = board_->getLayers();
+    int lastLayer = layers.count() - 1;
+
     for (size_t i = 0; i < items.size(); ++i) {
       if (!items[i]) continue;  // Safety check
       const Pin* pin = dynamic_cast<const Pin*>(items[i].get());
@@ -461,9 +474,7 @@ void BoardRenderer::renderPads() {
       IntPoint center = pin->getCenter();
       SDL_Point screenCenter = boardToScreen(center);
 
-      // Calculate pad size from the pin's tile shape
-      // Most pads are 1-2mm, but we need to scale properly
-      // Get the bounding box to determine actual size
+      // Get the bounding box to determine actual pad size
       IntBox pinBox = pin->getBoundingBox();
       int pinWidth = pinBox.ur.x - pinBox.ll.x;
       int pinHeight = pinBox.ur.y - pinBox.ll.y;
@@ -472,18 +483,32 @@ void BoardRenderer::renderPads() {
       int pinDiameter = std::max(pinWidth, pinHeight);
       int padRadiusPixels = static_cast<int>((pinDiameter / 2.0) * scale_ * config_.zoomLevel);
 
-      // Clamp to reasonable sizes - pads should be visible but not huge
-      if (padRadiusPixels < 1) padRadiusPixels = 1;
-      if (padRadiusPixels > 8) padRadiusPixels = 8;  // Max 8 pixels radius = 16 pixel diameter
+      // Don't clamp to max size - let pads show their actual size
+      if (padRadiusPixels < 2) padRadiusPixels = 2;
 
-      // Draw copper pad as a filled circle approximation (draw as rect for now)
+      // Determine pad color based on layer (same as traces)
+      int layer = pin->firstLayer();
+      SDL_Color padColor;
+      if (layer == 0) {
+        padColor = KiCadColors::CopperFront;  // F.Cu (red)
+      } else if (layer == lastLayer) {
+        padColor = KiCadColors::CopperBack;   // B.Cu (green)
+      } else {
+        padColor = KiCadColors::CopperInner;  // Inner layers (yellow)
+      }
+
+      // Draw copper pad as filled rectangle (approximation of circle)
       SDL_SetRenderDrawColor(renderer_, padColor.r, padColor.g, padColor.b, padColor.a);
       SDL_Rect padRect = {screenCenter.x - padRadiusPixels, screenCenter.y - padRadiusPixels,
                           padRadiusPixels * 2, padRadiusPixels * 2};
       SDL_RenderFillRect(renderer_, &padRect);
 
-      // Draw drill hole (darker, smaller) - about 60% of pad size
-      int holeRadiusPixels = (padRadiusPixels * 3) / 5;
+      // Draw light gray outline
+      SDL_SetRenderDrawColor(renderer_, outlineColor.r, outlineColor.g, outlineColor.b, outlineColor.a);
+      SDL_RenderDrawRect(renderer_, &padRect);
+
+      // Draw drill hole (darker, smaller) - about 50% of pad size
+      int holeRadiusPixels = padRadiusPixels / 2;
       if (holeRadiusPixels < 1) holeRadiusPixels = 1;
 
       SDL_SetRenderDrawColor(renderer_, holeColor.r, holeColor.g, holeColor.b, holeColor.a);
@@ -665,9 +690,74 @@ void BoardRenderer::drawTrace(const Trace* trace) {
   int halfWidth = static_cast<int>(trace->getHalfWidth() * scale_ * config_.zoomLevel);
   if (halfWidth < 1) halfWidth = 1;
 
-  // Draw thick line by drawing multiple parallel lines
-  for (int offset = -halfWidth; offset <= halfWidth; ++offset) {
-    SDL_RenderDrawLine(renderer_, p1.x + offset, p1.y, p2.x + offset, p2.y);
+  // Draw trace as thick line using SDL line thickness
+  // For very thin traces at low zoom, just draw a single line
+  if (halfWidth <= 1) {
+    SDL_RenderDrawLine(renderer_, p1.x, p1.y, p2.x, p2.y);
+    return;
+  }
+
+  // For thicker traces, draw as filled rectangle with perpendicular edges
+  double dx = p2.x - p1.x;
+  double dy = p2.y - p1.y;
+  double len = std::sqrt(dx * dx + dy * dy);
+
+  if (len < 0.001) {
+    // Degenerate trace (start == end), draw as a small filled square
+    SDL_Rect rect = {p1.x - halfWidth, p1.y - halfWidth, halfWidth * 2, halfWidth * 2};
+    SDL_RenderFillRect(renderer_, &rect);
+    return;
+  }
+
+  // Calculate perpendicular offset vector (normalized and scaled by halfWidth)
+  double perpX = -dy / len * halfWidth;
+  double perpY = dx / len * halfWidth;
+
+  // Four corners of the rectangle/parallelogram
+  SDL_Point corners[4];
+  corners[0] = {p1.x + static_cast<int>(perpX), p1.y + static_cast<int>(perpY)};
+  corners[1] = {p2.x + static_cast<int>(perpX), p2.y + static_cast<int>(perpY)};
+  corners[2] = {p2.x - static_cast<int>(perpX), p2.y - static_cast<int>(perpY)};
+  corners[3] = {p1.x - static_cast<int>(perpX), p1.y - static_cast<int>(perpY)};
+
+  // Draw filled polygon using scanline approach
+  int minY = corners[0].y;
+  int maxY = corners[0].y;
+  for (int i = 1; i < 4; ++i) {
+    minY = std::min(minY, corners[i].y);
+    maxY = std::max(maxY, corners[i].y);
+  }
+
+  for (int y = minY; y <= maxY; ++y) {
+    int intersections[4];
+    int count = 0;
+
+    // Find intersections with all 4 edges
+    for (int i = 0; i < 4; ++i) {
+      const SDL_Point& a = corners[i];
+      const SDL_Point& b = corners[(i + 1) % 4];
+
+      if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+        if (a.y != b.y) {
+          int x = a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
+          intersections[count++] = x;
+        }
+      }
+    }
+
+    // Sort intersections and draw line between pairs
+    if (count >= 2) {
+      for (int i = 0; i < count - 1; ++i) {
+        for (int j = i + 1; j < count; ++j) {
+          if (intersections[i] > intersections[j]) {
+            int tmp = intersections[i];
+            intersections[i] = intersections[j];
+            intersections[j] = tmp;
+          }
+        }
+      }
+      SDL_RenderDrawLine(renderer_, intersections[0], y, intersections[count-1], y);
+    }
   }
 }
 
@@ -717,6 +807,36 @@ SDL_Color BoardRenderer::getHeatColor(double congestion) const {
   if (congestion < 1.0) return {255, 255, 0, 255};     // Yellow
   if (congestion < 2.0) return {255, 128, 0, 255};     // Orange
   return {255, 0, 0, 255};                              // Red
+}
+
+void BoardRenderer::zoomIn(SDL_Point mousePos) {
+  // Convert mouse position to board coordinates before zoom
+  IntPoint boardPos = screenToBoard(mousePos);
+
+  // Apply zoom
+  config_.zoomLevel *= 1.2;
+
+  // Convert same board position to new screen coordinates after zoom
+  SDL_Point newScreenPos = boardToScreen(boardPos);
+
+  // Adjust pan offset so board position stays under mouse
+  config_.panOffset.x += mousePos.x - newScreenPos.x;
+  config_.panOffset.y += mousePos.y - newScreenPos.y;
+}
+
+void BoardRenderer::zoomOut(SDL_Point mousePos) {
+  // Convert mouse position to board coordinates before zoom
+  IntPoint boardPos = screenToBoard(mousePos);
+
+  // Apply zoom
+  config_.zoomLevel /= 1.2;
+
+  // Convert same board position to new screen coordinates after zoom
+  SDL_Point newScreenPos = boardToScreen(boardPos);
+
+  // Adjust pan offset so board position stays under mouse
+  config_.panOffset.x += mousePos.x - newScreenPos.x;
+  config_.panOffset.y += mousePos.y - newScreenPos.y;
 }
 
 } // namespace freerouting

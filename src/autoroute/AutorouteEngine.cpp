@@ -1,12 +1,12 @@
 #include "autoroute/AutorouteEngine.h"
 #include "autoroute/ExpansionDoor.h"
 #include "autoroute/MazeSearchAlgo.h"
-#include "autoroute/PathFinder.h"
 #include "autoroute/PushAndShove.h"
 #include "autoroute/LayerCostAnalyzer.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
+#include "core/Padstack.h"
 #include <algorithm>
 
 namespace freerouting {
@@ -62,104 +62,126 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   int ripupCostLimit = ctrl.ripupAllowed ? ctrl.ripupCosts : 0;
 
   // INTELLIGENT LAYER SELECTION
-  // Instead of just using startLayer/destLayer, analyze which layer is best for routing
-  int routingLayer = startLayer;
+  // Always analyze congestion and choose the best routing layer
+  // Even for SMD-to-SMD connections on the same layer, we may route on a different layer
+  // with vias at both ends if that layer is less congested
 
-  // If both items allow multiple layers (vias/through-hole pads), choose intelligently
+  int routingLayer = startLayer;
   bool startMultilayer = (startSet[0]->lastLayer() > startSet[0]->firstLayer());
   bool destMultilayer = (destSet[0]->lastLayer() > destSet[0]->firstLayer());
 
-  if (startMultilayer || destMultilayer) {
-    // Analyze layer congestion in the routing region
-    IntBox routingRegion(
-      std::min(start.x, goal.x) - 1000000,  // 1mm margin
-      std::min(start.y, goal.y) - 1000000,
-      std::max(start.x, goal.x) + 1000000,
-      std::max(start.y, goal.y) + 1000000
-    );
+  // Analyze layer congestion in the routing region
+  IntBox routingRegion(
+    std::min(start.x, goal.x) - 1000000,  // 1mm margin
+    std::min(start.y, goal.y) - 1000000,
+    std::max(start.x, goal.x) + 1000000,
+    std::max(start.y, goal.y) + 1000000
+  );
 
-    LayerCostAnalyzer layerAnalyzer(board);
-    layerAnalyzer.analyze();
+  LayerCostAnalyzer layerAnalyzer(board);
+  layerAnalyzer.analyze();
 
-    // Find best layer in the routing region
-    int bestLayer = layerAnalyzer.findBestLayerInRegion(routingRegion);
+  // Calculate route distance to determine if it's worth using alternative layers
+  int dx = std::abs(start.x - goal.x);
+  int dy = std::abs(start.y - goal.y);
+  double routeDistance = std::sqrt(static_cast<double>(dx * dx + dy * dy));
+  constexpr double kLongRouteThreshold = 5000000.0;  // 0.5mm - routes longer than this consider alt layers
 
-    // If one endpoint is single-layer, prefer that layer to avoid unnecessary via
-    if (!startMultilayer && startLayer != destLayer) {
-      // Start is fixed layer, dest can move - route on start layer then via to dest
-      routingLayer = startLayer;
-    } else if (!destMultilayer && startLayer != destLayer) {
-      // Dest is fixed layer, start can move - via from start then route on dest layer
-      routingLayer = destLayer;
-    } else {
-      // Both flexible or both on same layer - use best available layer
-      routingLayer = bestLayer;
+  // Find best layer in the routing region
+  int bestLayer = layerAnalyzer.findBestLayerInRegion(routingRegion);
+  double startLayerCost = layerAnalyzer.getLayerCost(startLayer);
+  double bestLayerCost = layerAnalyzer.getLayerCost(bestLayer);
+
+  // Decision logic: Use alternative layer if:
+  // 1. Route is long enough to justify via overhead (> 0.5mm)
+  // 2. Best layer is less congested (> 20% improvement OR start layer is very congested)
+  // 3. We have at least 2 layers available
+  int numLayers = board->getLayers().count();
+  bool worthAlternateLayer = (routeDistance > kLongRouteThreshold) &&
+                             (bestLayerCost < startLayerCost * 0.8 || startLayerCost > 1.5) &&
+                             (numLayers >= 2);
+
+  if (worthAlternateLayer && bestLayer != startLayer) {
+    // Use the less congested layer even if it requires vias
+    routingLayer = bestLayer;
+
+    static int altLayerCount = 0;
+    if (altLayerCount < 5) {
+      std::cerr << "INFO: Routing on alternative layer " << routingLayer
+                << " instead of " << startLayer
+                << " (cost " << bestLayerCost << " vs " << startLayerCost
+                << ", distance " << (routeDistance / 10000.0) << "mm)" << std::endl;
+      altLayerCount++;
     }
   }
 
-  // Check if we need layer transition
-  bool needsVia = (routingLayer != startLayer) || (routingLayer != destLayer);
+  // Use the proper maze search algorithm (expansion rooms) from Java freerouting
+  // This naturally handles multi-layer routing with vias
+  auto mazeSearch = MazeSearchAlgo::getInstance(startSet, destSet, this, ctrl);
 
-  if (!needsVia) {
-    // Same layer routing - use adaptive pathfinding
-    // Try coarse grid first (fast), then fine grid if needed (precise)
-
-    // First attempt: Coarse grid (1000 units = 0.1mm) for speed
-    PathFinder coarsePathFinder(1000);
-    auto pathResult = coarsePathFinder.findPath(*board, start, goal, routingLayer, netNo);
-
-    // If coarse grid failed, retry with finer grid (500 units = 0.05mm)
-    if (!pathResult.found) {
-      PathFinder finePathFinder(500);
-      pathResult = finePathFinder.findPath(*board, start, goal, routingLayer, netNo);
-    }
-
-    // If pathfinding failed on preferred layer and both items are multilayer,
-    // try alternative layers before giving up
-    if (!pathResult.found && startMultilayer && destMultilayer) {
-      int numLayers = board->getLayers().count();
-
-      // Try each layer from least to most congested
-      LayerCostAnalyzer layerAnalyzer(board);
-      layerAnalyzer.analyze();
-
-      std::vector<std::pair<int, double>> layerCosts;
-      for (int layer = 0; layer < numLayers; ++layer) {
-        if (layer != routingLayer) {  // Skip the one we already tried
-          layerCosts.push_back({layer, layerAnalyzer.getLayerCost(layer)});
-        }
-      }
-
-      // Sort by cost (lowest first)
-      std::sort(layerCosts.begin(), layerCosts.end(),
-                [](const auto& a, const auto& b) { return a.second < b.second; });
-
-      // Try up to 2 alternative layers
-      for (size_t i = 0; i < std::min(size_t(2), layerCosts.size()); ++i) {
-        int altLayer = layerCosts[i].first;
-
-        PathFinder altPathFinder(1000);
-        auto altResult = altPathFinder.findPath(*board, start, goal, altLayer, netNo);
-
-        if (altResult.found && altResult.points.size() >= 2) {
-          // Found a route on alternative layer! Use it with vias at endpoints
-          routingLayer = altLayer;
-          pathResult = altResult;
-          needsVia = (routingLayer != startLayer) || (routingLayer != destLayer);
-          break;
-        }
-      }
-    }
-
-    if (!pathResult.found || pathResult.points.size() < 2) {
-      return createDirectRoute(start, goal, routingLayer, ctrl, ripupCostLimit, rippedItems);
-    }
-
-    return createTracesFromPath(pathResult.points, routingLayer, ctrl, ripupCostLimit, rippedItems);
+  if (!mazeSearch) {
+    return AutorouteResult::Failed;
   }
 
-  // Multi-layer routing with via insertion
-  return routeWithVia(start, goal, routingLayer, destLayer, ctrl, ripupCostLimit, rippedItems);
+  auto result = mazeSearch->findConnection();
+
+  if (!result.found) {
+    // Maze search failed - try direct route as last resort
+    return createDirectRoute(start, goal, routingLayer, ctrl, ripupCostLimit, rippedItems);
+  }
+
+  // Maze search succeeded! Now create traces and vias from the path
+  if (result.pathPoints.empty() || result.pathLayers.empty()) {
+    return AutorouteResult::Failed;
+  }
+
+  // Create traces segment by segment, inserting vias when layer changes
+  std::vector<int> nets{netNo};
+  int prevLayer = result.pathLayers[0];
+  IntPoint prevPoint = result.pathPoints[0];
+
+  for (size_t i = 1; i < result.pathPoints.size(); ++i) {
+    IntPoint currPoint = result.pathPoints[i];
+    int currLayer = result.pathLayers[i];
+
+    // If layer changed, insert via
+    if (currLayer != prevLayer) {
+      // Create via at the transition point
+      int viaItemId = board->generateItemId();
+      Padstack* viaPadstack = new Padstack(
+        "via_" + std::to_string(viaItemId),
+        viaItemId,
+        std::min(prevLayer, currLayer),
+        std::max(prevLayer, currLayer),
+        true,   // attachAllowed
+        false   // placedAbsolute
+      );
+
+      auto via = std::make_unique<Via>(
+        prevPoint, viaPadstack, nets, ctrl.traceClearanceClassNo, viaItemId,
+        FixedState::NotFixed, true, board
+      );
+      board->addItem(std::move(via));
+    }
+
+    // Create trace on current layer
+    if (prevPoint != currPoint) {
+      int halfWidth = ctrl.traceHalfWidth.empty() ? 1250 : ctrl.traceHalfWidth[currLayer];
+
+      int itemId = board->generateItemId();
+      auto trace = std::make_unique<Trace>(
+        prevPoint, currPoint, currLayer, halfWidth,
+        nets, ctrl.traceClearanceClassNo, itemId,
+        FixedState::NotFixed, board
+      );
+      board->addItem(std::move(trace));
+    }
+
+    prevPoint = currPoint;
+    prevLayer = currLayer;
+  }
+
+  return AutorouteResult::Routed;
 }
 
 // Helper: Create direct route (fallback when pathfinding fails)
@@ -343,28 +365,10 @@ AutorouteEngine::AutorouteResult AutorouteEngine::tryRouteWithViaAt(
     board->addItem(std::move(via));
   }
 
-  // Route first segment: start -> via on startLayer
-  PathFinder pathFinder(1000);
-  auto path1 = pathFinder.findPath(*board, start, viaLocation, startLayer, netNo);
-
-  if (path1.found && path1.points.size() >= 2) {
-    createTracesFromPath(path1.points, startLayer, ctrl, ripupCostLimit, rippedItems);
-  } else {
-    // Fallback to direct route
-    createDirectRoute(start, viaLocation, startLayer, ctrl, ripupCostLimit, rippedItems);
-  }
-
-  // Route second segment: via -> goal on destLayer
-  auto path2 = pathFinder.findPath(*board, viaLocation, goal, destLayer, netNo);
-
-  if (path2.found && path2.points.size() >= 2) {
-    createTracesFromPath(path2.points, destLayer, ctrl, ripupCostLimit, rippedItems);
-  } else {
-    // Fallback to direct route
-    createDirectRoute(viaLocation, goal, destLayer, ctrl, ripupCostLimit, rippedItems);
-  }
-
-  return AutorouteResult::Routed;
+  // These helper functions are obsolete now that we use MazeSearchAlgo
+  // which handles vias automatically. Just return NotRouted to fall back
+  // to the main algorithm.
+  return AutorouteResult::NotRouted;
 }
 
 // Helper: Find existing via at a location

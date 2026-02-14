@@ -67,8 +67,10 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     progressDisplay->message("Items to route: " + std::to_string(itemIdsToRoute.size()));
   }
 
-  // Group items by net for MST routing
-  std::map<int, std::vector<Item*>> itemsByNet;
+  // Group item IDs by net for MST routing
+  // IMPORTANT: Store item IDs, not pointers, because adding new items during routing
+  // can cause the items vector to reallocate, invalidating all pointers!
+  std::map<int, std::vector<int>> itemIdsByNet;
 
   for (int itemId : itemIdsToRoute) {
     Item* item = board->getItem(itemId);
@@ -76,14 +78,14 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
 
     const std::vector<int>& nets = item->getNets();
     for (int netNo : nets) {
-      itemsByNet[netNo].push_back(item);
+      itemIdsByNet[netNo].push_back(itemId);
     }
   }
 
   // Sort nets by complexity (simple nets first for better board utilization)
   // Priority: 2-pad nets → 3-5 pad nets → larger nets
-  std::vector<std::pair<int, std::vector<Item*>>> sortedNets(
-    itemsByNet.begin(), itemsByNet.end());
+  std::vector<std::pair<int, std::vector<int>>> sortedNets(
+    itemIdsByNet.begin(), itemIdsByNet.end());
 
   std::sort(sortedNets.begin(), sortedNets.end(),
     [](const auto& a, const auto& b) {
@@ -115,9 +117,23 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     }
 
     int netNo = netPair.first;
-    const std::vector<Item*>& netItems = netPair.second;
+    const std::vector<int>& netItemIds = netPair.second;
 
     // Skip empty nets
+    if (netItemIds.empty()) {
+      continue;
+    }
+
+    // Convert item IDs to pointers RIGHT BEFORE USE
+    // (Don't store pointers because vector reallocation can invalidate them!)
+    std::vector<Item*> netItems;
+    for (int itemId : netItemIds) {
+      Item* item = board->getItem(itemId);
+      if (item) {
+        netItems.push_back(item);
+      }
+    }
+
     if (netItems.empty()) {
       continue;
     }
@@ -341,6 +357,15 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
     return AutorouteAttemptResult(AutorouteAttemptState::Failed, "No board or items");
   }
 
+  // CRITICAL: Store item IDs immediately, not pointers!
+  // Pointers will become invalid when we add traces/vias during routing
+  std::vector<int> netItemIds;
+  for (Item* item : netItems) {
+    if (item) {
+      netItemIds.push_back(item->getId());
+    }
+  }
+
   // Check if this is a power/ground net - skip for now
   const Nets* nets = board->getNets();
   if (nets) {
@@ -363,22 +388,56 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
     }
   }
 
-  // Build MST for this net
-  std::vector<MSTRouter::MSTEdge> mstEdges = MSTRouter::buildMST(netItems);
+  // Build MST for this net, but store INDICES not pointers
+  // (pointers can become invalid when board's items vector reallocates!)
+  struct MSTEdgeIndices {
+    int fromIdx;
+    int toIdx;
+    double cost;
+  };
 
-  if (mstEdges.empty()) {
+  std::vector<MSTEdgeIndices> mstEdgeIndices;
+  {
+    // Build MST with pointers, but immediately convert to indices
+    std::vector<MSTRouter::MSTEdge> mstEdges = MSTRouter::buildMST(netItems);
+
+    if (mstEdges.empty()) {
+      return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
+        "No edges to route (single item or already connected)");
+    }
+
+    // Convert edges to indices
+    for (const auto& edge : mstEdges) {
+      // Find indices in netItems vector
+      int fromIdx = -1;
+      int toIdx = -1;
+      for (size_t i = 0; i < netItems.size(); ++i) {
+        if (netItems[i] == edge.from) fromIdx = static_cast<int>(i);
+        if (netItems[i] == edge.to) toIdx = static_cast<int>(i);
+      }
+
+      if (fromIdx >= 0 && toIdx >= 0) {
+        mstEdgeIndices.push_back({fromIdx, toIdx, edge.cost});
+      }
+    }
+  }
+
+  if (mstEdgeIndices.empty()) {
     return AutorouteAttemptResult(AutorouteAttemptState::AlreadyConnected,
       "No edges to route (single item or already connected)");
   }
 
   // Sort edges by cost (route shortest connections first)
-  MSTRouter::sortEdgesByCost(mstEdges);
+  std::sort(mstEdgeIndices.begin(), mstEdgeIndices.end(),
+    [](const MSTEdgeIndices& a, const MSTEdgeIndices& b) {
+      return a.cost < b.cost;
+    });
 
   // Route each MST edge
   int routedEdges = 0;
   int failedEdges = 0;
 
-  for (const auto& edge : mstEdges) {
+  for (const auto& edgeIndices : mstEdgeIndices) {
     if (stoppable && stoppable->isStopRequested()) {
       break;
     }
@@ -410,16 +469,26 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
     }
     control.maxIterations = 50000 + static_cast<int>(5000 * std::sqrt(std::max(1, netConnectionCount)));
 
+    // Get FRESH pointers right before routing (critical!)
+    // Don't use stored pointers as they may have been invalidated by previous routing
+    Item* fromItem = board->getItem(netItemIds[edgeIndices.fromIdx]);
+    Item* toItem = board->getItem(netItemIds[edgeIndices.toIdx]);
+
+    if (!fromItem || !toItem) {
+      failedEdges++;
+      continue;
+    }
+
     // Route this edge
-    std::vector<Item*> startSet{edge.from};
-    std::vector<Item*> destSet{edge.to};
+    std::vector<Item*> startSet{fromItem};
+    std::vector<Item*> destSet{toItem};
     std::vector<Item*> rippedItems;
 
     auto result = engine.autorouteConnection(startSet, destSet, control, rippedItems);
 
     if (result == AutorouteEngine::AutorouteResult::Routed ||
         result == AutorouteEngine::AutorouteResult::AlreadyConnected) {
-      board->markConnectionRouted(edge.from, edge.to, netNo);
+      board->markConnectionRouted(fromItem, toItem, netNo);
       routedEdges++;
     } else {
       failedEdges++;
@@ -429,10 +498,10 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
   // Determine overall result
   if (failedEdges == 0) {
     return AutorouteAttemptResult(AutorouteAttemptState::Routed,
-      "MST: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdges.size()) + " edges");
+      "MST: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdgeIndices.size()) + " edges");
   } else if (routedEdges > 0) {
     return AutorouteAttemptResult(AutorouteAttemptState::Failed,
-      "MST partial: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdges.size()) + " edges");
+      "MST partial: " + std::to_string(routedEdges) + "/" + std::to_string(mstEdgeIndices.size()) + " edges");
   } else {
     return AutorouteAttemptResult(AutorouteAttemptState::Failed,
       "MST failed: no edges routed");

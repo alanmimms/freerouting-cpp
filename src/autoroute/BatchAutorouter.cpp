@@ -216,8 +216,17 @@ bool BatchAutorouter::autoroutePass(int passNumber, Stoppable* stoppableThread) 
     removeTails();
   }
 
-  // Return true if we made progress (routed or failed items)
-  return (lastPassStats.itemsRouted > 0 || lastPassStats.itemsFailed > 0);
+  // Check if we should continue routing:
+  // - Continue if we routed anything this pass (made progress)
+  // - Stop if we didn't route anything (no progress)
+  // Even if there are failures, keep trying if we're making progress
+  bool madeProgress = (lastPassStats.itemsRouted > 0);
+
+  // Also check if there are still incomplete connections
+  bool hasIncompleteConnections = !board->getIncompleteConnections().empty();
+
+  // Continue if we made progress AND still have incomplete connections
+  return madeProgress && hasIncompleteConnections;
 }
 
 AutorouteAttemptResult BatchAutorouter::autorouteItem(

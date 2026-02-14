@@ -2,7 +2,9 @@
 #include "autoroute/TargetItemExpansionDoor.h"
 #include "autoroute/ExpansionDoor.h"
 #include "autoroute/CompleteFreeSpaceExpansionRoom.h"
+#include "autoroute/SimpleGridRouter.h"
 #include "board/Item.h"
+#include "board/RoutingBoard.h"
 #include <cmath>
 #include <algorithm>
 
@@ -46,6 +48,10 @@ bool MazeSearchAlgo::init(
     return false;
   }
 
+  // Store start and dest items for SimpleGridRouter fallback
+  this->startItems = startItems;
+  this->destItems = destItems;
+
   // Mark start items
   for (Item* item : startItems) {
     item->getAutorouteInfo().setStartInfo(true);
@@ -57,7 +63,7 @@ bool MazeSearchAlgo::init(
 
     // Add item bounding box to destination distance calculator
     IntBox bbox = item->getBoundingBox();
-    int layer = 0; // Simplified - would need actual layer from item
+    int layer = item->firstLayer();
 
     destinationDistance->join(bbox, layer);
   }
@@ -75,43 +81,53 @@ bool MazeSearchAlgo::init(
 MazeSearchAlgo::Result MazeSearchAlgo::findConnection() {
   Result result;
 
-  int maxIterations = control.maxIterations;
-  int iterations = 0;
+  // TEMPORARY: Use SimpleGridRouter until full expansion room algorithm is ported
+  // The expansion room system requires significant infrastructure that isn't implemented yet
 
-  // A* search through expansion rooms
-  while (!mazeExpansionList.empty() && iterations < maxIterations) {
-    ++iterations;
-
-    // Check if we should stop
-    if (autorouteEngine->isStopRequested()) {
-      break;
-    }
-
-    // Get lowest cost element
-    MazeListElement current = mazeExpansionList.top();
-    mazeExpansionList.pop();
-
-    // Check if this element's maze search info is already occupied
-    auto& mazeInfo = current.door->getMazeSearchElement(current.sectionNo);
-    if (mazeInfo.isOccupied) {
-      continue; // Already processed
-    }
-
-    // Mark as occupied
-    mazeInfo.isOccupied = true;
-
-    // Check if we reached a destination
-    if (isDestination(current.door)) {
-      destinationDoor = current.door;
-      sectionNoOfDestinationDoor = current.sectionNo;
-      result = reconstructPath();
-      result.found = true;
-      return result;
-    }
-
-    // Expand to neighbors
-    expand(current);
+  if (startItems.empty() || destItems.empty()) {
+    return result;
   }
+
+  // Get start and goal positions
+  IntBox startBox = startItems[0]->getBoundingBox();
+  IntBox goalBox = destItems[0]->getBoundingBox();
+
+  IntPoint start((startBox.ll.x + startBox.ur.x) / 2, (startBox.ll.y + startBox.ur.y) / 2);
+  IntPoint goal((goalBox.ll.x + goalBox.ur.x) / 2, (goalBox.ll.y + goalBox.ur.y) / 2);
+
+  int startLayer = startItems[0]->firstLayer();
+  int goalLayer = destItems[0]->firstLayer();
+
+  // Get trace width
+  int traceHalfWidth = 1250;  // Default
+  if (!control.traceHalfWidth.empty() && startLayer < static_cast<int>(control.traceHalfWidth.size())) {
+    traceHalfWidth = control.traceHalfWidth[startLayer];
+  }
+
+  // Get board from autoroute engine
+  BasicBoard* basicBoard = startItems[0]->getBoard();
+  if (!basicBoard) {
+    return result;
+  }
+  RoutingBoard* board = static_cast<RoutingBoard*>(basicBoard);
+
+  // Get net number
+  int netNo = 0;
+  if (!startItems[0]->getNets().empty()) {
+    netNo = startItems[0]->getNets()[0];
+  }
+
+  // Use simple grid router
+  auto gridResult = SimpleGridRouter::findPath(
+    start, startLayer,
+    goal, goalLayer,
+    traceHalfWidth,
+    board,
+    netNo);
+
+  result.found = gridResult.found;
+  result.pathPoints = gridResult.pathPoints;
+  result.pathLayers = gridResult.pathLayers;
 
   return result;
 }

@@ -43,6 +43,7 @@ add_library(freerouting
   src/autoroute/DestinationDistance.cpp
   src/autoroute/AutorouteEngine.cpp
   src/autoroute/MazeSearchAlgo.cpp
+  src/autoroute/SimpleGridRouter.cpp
   src/autoroute/BatchAutorouter.cpp
   src/autoroute/PushAndShove.cpp
   src/board/DrcEngine.cpp

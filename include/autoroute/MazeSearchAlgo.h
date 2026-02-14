@@ -83,6 +83,10 @@ private:
   ExpandableObject* destinationDoor;
   int sectionNoOfDestinationDoor;
 
+  // Store start/dest items for SimpleGridRouter fallback
+  std::vector<Item*> startItems;
+  std::vector<Item*> destItems;
+
   // Initialize the search with start and destination items
   bool init(const std::vector<Item*>& startItems,
             const std::vector<Item*>& destItems);

@@ -102,6 +102,9 @@ bool CommandLineArgs::parse(int argc, const char* argv[],
       }
     } else if (arg == "--visualize" || arg == "-V") {
       args.visualize = true;
+    } else if (arg == "--visualize-only") {
+      args.visualize = true;
+      args.visualizeOnly = true;
     } else if (arg == "--dry-run") {
       args.dryRun = true;
     } else if (arg[0] == '-') {

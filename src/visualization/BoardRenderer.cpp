@@ -82,12 +82,64 @@ bool BoardRenderer::initialize() {
 
   // Calculate board bounds and scale
   boardBounds_ = IntBox(INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN);
+  constexpr int kMaxReasonableCoord = 10000000;  // 1 meter max
   for (const auto& item : board_->getItems()) {
     IntBox itemBox = item->getBoundingBox();
+
+    // Sanity check: skip items with extreme/invalid bounds
+    if (std::abs(itemBox.ll.x) > kMaxReasonableCoord || std::abs(itemBox.ll.y) > kMaxReasonableCoord ||
+        std::abs(itemBox.ur.x) > kMaxReasonableCoord || std::abs(itemBox.ur.y) > kMaxReasonableCoord ||
+        itemBox.ur.x < itemBox.ll.x || itemBox.ur.y < itemBox.ll.y) {
+      std::cerr << "WARNING: Skipping item with invalid bounds: ("
+                << itemBox.ll.x << "," << itemBox.ll.y << ") -> ("
+                << itemBox.ur.x << "," << itemBox.ur.y << ")" << std::endl;
+      continue;
+    }
+
     boardBounds_.ll.x = std::min(boardBounds_.ll.x, itemBox.ll.x);
     boardBounds_.ll.y = std::min(boardBounds_.ll.y, itemBox.ll.y);
     boardBounds_.ur.x = std::max(boardBounds_.ur.x, itemBox.ur.x);
     boardBounds_.ur.y = std::max(boardBounds_.ur.y, itemBox.ur.y);
+  }
+
+  // Also include footprints in bounds calculation
+  auto footprintsPtr = board_->getFootprints();
+  if (footprintsPtr) {
+    constexpr int kUnitsPerMm = 10000;  // Same as KiCadBoardConverter
+    for (const auto& fp : *footprintsPtr) {
+      // Convert footprint position from mm to internal units
+      int fpX = static_cast<int>(fp.x * kUnitsPerMm);
+      int fpY = static_cast<int>(fp.y * kUnitsPerMm);
+
+      // Estimate bounds from footprint lines
+      for (const auto& line : fp.fpLines) {
+        double cosR = std::cos(fp.rotation * M_PI / 180.0);
+        double sinR = std::sin(fp.rotation * M_PI / 180.0);
+
+        double x1 = line.startX * cosR - line.startY * sinR + fp.x;
+        double y1 = line.startX * sinR + line.startY * cosR + fp.y;
+        double x2 = line.endX * cosR - line.endY * sinR + fp.x;
+        double y2 = line.endX * sinR + line.endY * cosR + fp.y;
+
+        int ix1 = static_cast<int>(x1 * kUnitsPerMm);
+        int iy1 = static_cast<int>(y1 * kUnitsPerMm);
+        int ix2 = static_cast<int>(x2 * kUnitsPerMm);
+        int iy2 = static_cast<int>(y2 * kUnitsPerMm);
+
+        boardBounds_.ll.x = std::min({boardBounds_.ll.x, ix1, ix2});
+        boardBounds_.ll.y = std::min({boardBounds_.ll.y, iy1, iy2});
+        boardBounds_.ur.x = std::max({boardBounds_.ur.x, ix1, ix2});
+        boardBounds_.ur.y = std::max({boardBounds_.ur.y, iy1, iy2});
+      }
+    }
+  }
+
+  // Debug: Print bounds
+  std::cerr << "DEBUG: Board bounds: (" << boardBounds_.ll.x << "," << boardBounds_.ll.y
+            << ") -> (" << boardBounds_.ur.x << "," << boardBounds_.ur.y << ")" << std::endl;
+  std::cerr << "DEBUG: Items count: " << board_->getItems().size() << std::endl;
+  if (footprintsPtr) {
+    std::cerr << "DEBUG: Footprints count: " << footprintsPtr->size() << std::endl;
   }
 
   calculateScale();
@@ -114,6 +166,20 @@ void BoardRenderer::render() {
   if (!renderer_) return;
 
   std::lock_guard<std::mutex> lock(renderMutex_);
+
+  // Recalculate bounds only once after initial items loaded
+  // This prevents constant re-zooming during routing
+  static bool boundsInitialized = false;
+  static size_t initialItemCount = 0;
+
+  if (!boundsInitialized) {
+    // Lock bounds immediately - don't recalculate during routing
+    // This prevents huge bounds from bad trace coordinates
+    boundsInitialized = true;
+    std::cerr << "DEBUG: Locking initial bounds: (" << boardBounds_.ll.x << "," << boardBounds_.ll.y
+              << ") -> (" << boardBounds_.ur.x << "," << boardBounds_.ur.y << ")" << std::endl;
+  }
+
 
   renderBackground();
 
@@ -418,10 +484,10 @@ void BoardRenderer::renderComponents() {
       // Render fp_line elements (courtyards and silkscreen)
       static int debugCount = 0;
       for (const auto& line : footprint.fpLines) {
-        // Skip non-courtyard/silkscreen layers for now
+        // Render courtyards and silkscreen only
         if (line.layer != "F.CrtYd" && line.layer != "B.CrtYd" &&
             line.layer != "F.SilkS" && line.layer != "B.SilkS") {
-          continue;
+          continue;  // Skip other layers (Fab, Paste, Mask, etc.)
         }
 
         // Transform line coordinates from footprint space to board space
@@ -435,9 +501,25 @@ void BoardRenderer::renderComponents() {
         IntPoint start(static_cast<int>(x1 * 10000), static_cast<int>(y1 * 10000));
         IntPoint end(static_cast<int>(x2 * 10000), static_cast<int>(y2 * 10000));
 
+        // Sanity check: skip lines with extreme coordinates
+        constexpr int kMaxReasonableCoord = 10000000;  // 1 meter
+        if (std::abs(start.x) > kMaxReasonableCoord || std::abs(start.y) > kMaxReasonableCoord ||
+            std::abs(end.x) > kMaxReasonableCoord || std::abs(end.y) > kMaxReasonableCoord) {
+          continue;
+        }
+
         // Convert to screen coordinates
         SDL_Point screenStart = boardToScreen(start);
         SDL_Point screenEnd = boardToScreen(end);
+
+        // Skip if both endpoints are way off-screen (don't render huge off-screen shapes)
+        int maxOffscreen = std::max(config_.windowWidth, config_.windowHeight) * 2;
+        if ((screenStart.x < -maxOffscreen && screenEnd.x < -maxOffscreen) ||
+            (screenStart.x > config_.windowWidth + maxOffscreen && screenEnd.x > config_.windowWidth + maxOffscreen) ||
+            (screenStart.y < -maxOffscreen && screenEnd.y < -maxOffscreen) ||
+            (screenStart.y > config_.windowHeight + maxOffscreen && screenEnd.y > config_.windowHeight + maxOffscreen)) {
+          continue;
+        }
 
         if (debugCount < 5) {
           std::cerr << "DEBUG: Line " << debugCount << " layer=" << line.layer
@@ -486,16 +568,34 @@ void BoardRenderer::renderPads() {
       IntPoint center = pin->getCenter();
       SDL_Point screenCenter = boardToScreen(center);
 
+      // Skip pads that are way off-screen (more than 2x window size away)
+      int maxOffscreen = std::max(config_.windowWidth, config_.windowHeight) * 2;
+      if (screenCenter.x < -maxOffscreen || screenCenter.x > config_.windowWidth + maxOffscreen ||
+          screenCenter.y < -maxOffscreen || screenCenter.y > config_.windowHeight + maxOffscreen) {
+        continue;  // Way off-screen, skip
+      }
+
       // Get the bounding box to determine actual pad size
       IntBox pinBox = pin->getBoundingBox();
       int pinWidth = pinBox.ur.x - pinBox.ll.x;
       int pinHeight = pinBox.ur.y - pinBox.ll.y;
 
+      // Sanity check: reject pins with extreme/invalid sizes
+      // Max reasonable pad size: 1.5mm = 15,000 internal units
+      // Larger pads are thermal slugs or ground planes that occlude the view
+      constexpr int kMaxReasonablePadSize = 15000;
+      if (pinWidth > kMaxReasonablePadSize || pinHeight > kMaxReasonablePadSize ||
+          pinWidth < 0 || pinHeight < 0) {
+        // Don't spam output - just skip silently
+        continue;
+      }
+
       // Use the larger dimension for circular approximation
       int pinDiameter = std::max(pinWidth, pinHeight);
       int padRadiusPixels = static_cast<int>((pinDiameter / 2.0) * scale_ * config_.zoomLevel);
 
-      // Don't clamp to max size - let pads show their actual size
+      // Clamp to reasonable screen size (max 100 pixels radius)
+      if (padRadiusPixels > 100) padRadiusPixels = 100;
       if (padRadiusPixels < 2) padRadiusPixels = 2;
 
       // Determine pad color based on layer (same as traces)
@@ -510,24 +610,28 @@ void BoardRenderer::renderPads() {
         padColor = KiCadColors::LayerColors[layer % 6];
       }
 
-      // Draw copper pad as filled rectangle (approximation of circle)
+      // Draw copper pad as filled circle
       SDL_SetRenderDrawColor(renderer_, padColor.r, padColor.g, padColor.b, padColor.a);
-      SDL_Rect padRect = {screenCenter.x - padRadiusPixels, screenCenter.y - padRadiusPixels,
-                          padRadiusPixels * 2, padRadiusPixels * 2};
-      SDL_RenderFillRect(renderer_, &padRect);
 
-      // Draw light gray outline
-      SDL_SetRenderDrawColor(renderer_, outlineColor.r, outlineColor.g, outlineColor.b, outlineColor.a);
-      SDL_RenderDrawRect(renderer_, &padRect);
+      // Draw filled circle for pad
+      for (int y = -padRadiusPixels; y <= padRadiusPixels; y++) {
+        int x = static_cast<int>(std::sqrt(padRadiusPixels * padRadiusPixels - y * y));
+        SDL_RenderDrawLine(renderer_,
+                          screenCenter.x - x, screenCenter.y + y,
+                          screenCenter.x + x, screenCenter.y + y);
+      }
 
-      // Draw drill hole (darker, smaller) - about 50% of pad size
+      // Draw drill hole as filled circle (darker, smaller) - about 50% of pad size
       int holeRadiusPixels = padRadiusPixels / 2;
       if (holeRadiusPixels < 1) holeRadiusPixels = 1;
 
       SDL_SetRenderDrawColor(renderer_, holeColor.r, holeColor.g, holeColor.b, holeColor.a);
-      SDL_Rect holeRect = {screenCenter.x - holeRadiusPixels, screenCenter.y - holeRadiusPixels,
-                           holeRadiusPixels * 2, holeRadiusPixels * 2};
-      SDL_RenderFillRect(renderer_, &holeRect);
+      for (int y = -holeRadiusPixels; y <= holeRadiusPixels; y++) {
+        int x = static_cast<int>(std::sqrt(holeRadiusPixels * holeRadiusPixels - y * y));
+        SDL_RenderDrawLine(renderer_,
+                          screenCenter.x - x, screenCenter.y + y,
+                          screenCenter.x + x, screenCenter.y + y);
+      }
     }
   } catch (...) {
     // Silently handle exceptions from concurrent access
@@ -683,6 +787,16 @@ void BoardRenderer::drawTrace(const Trace* trace) {
   IntPoint start = trace->getStart();
   IntPoint end = trace->getEnd();
 
+  // Sanity check: reject traces with extreme coordinates (outside reasonable board bounds)
+  // Max reasonable coordinate: 1 meter = 10,000,000 internal units
+  constexpr int kMaxReasonableCoord = 10000000;
+  if (std::abs(start.x) > kMaxReasonableCoord || std::abs(start.y) > kMaxReasonableCoord ||
+      std::abs(end.x) > kMaxReasonableCoord || std::abs(end.y) > kMaxReasonableCoord) {
+    std::cerr << "WARNING: Skipping trace with extreme coordinates: ("
+              << start.x << "," << start.y << ") -> (" << end.x << "," << end.y << ")" << std::endl;
+    return;
+  }
+
   SDL_Point p1 = boardToScreen(start);
   SDL_Point p2 = boardToScreen(end);
 
@@ -781,23 +895,50 @@ void BoardRenderer::drawVia(const Via* via) {
   IntPoint center = via->getCenter();
   SDL_Point screenCenter = boardToScreen(center);
 
-  // Use realistic via size (0.8mm radius = 800000 nm)
-  int radius = static_cast<int>(800000 * scale_ * config_.zoomLevel);
-  if (radius < 2) radius = 2;
+  // Skip vias way off-screen
+  int maxOffscreen = std::max(config_.windowWidth, config_.windowHeight) * 2;
+  if (screenCenter.x < -maxOffscreen || screenCenter.x > config_.windowWidth + maxOffscreen ||
+      screenCenter.y < -maxOffscreen || screenCenter.y > config_.windowHeight + maxOffscreen) {
+    return;  // Way off-screen, skip
+  }
 
-  // Draw via annular ring (light gray)
+  // Get actual via size from bounding box
+  IntBox viaBox = via->getBoundingBox();
+  int viaWidth = viaBox.ur.x - viaBox.ll.x;
+  int viaHeight = viaBox.ur.y - viaBox.ll.y;
+  int viaDiameter = std::max(viaWidth, viaHeight);
+
+  // Skip vias that are too large (>2mm = 20000 internal units)
+  if (viaDiameter > 20000) {
+    return;  // Likely a thermal pad or ground plane, skip
+  }
+
+  int radius = static_cast<int>((viaDiameter / 2.0) * scale_ * config_.zoomLevel);
+  if (radius < 2) radius = 2;
+  if (radius > 100) radius = 100;  // Clamp to reasonable screen size
+
+  // Draw via annular ring as filled circle
   auto& viaColor = KiCadColors::Via;
   SDL_SetRenderDrawColor(renderer_, viaColor.r, viaColor.g, viaColor.b, viaColor.a);
-  SDL_Rect rect = {screenCenter.x - radius, screenCenter.y - radius, radius * 2, radius * 2};
-  SDL_RenderFillRect(renderer_, &rect);
 
-  // Draw drill hole (dark)
+  // Draw filled circle by drawing horizontal lines for each y coordinate
+  for (int y = -radius; y <= radius; y++) {
+    int x = static_cast<int>(std::sqrt(radius * radius - y * y));
+    SDL_RenderDrawLine(renderer_,
+                      screenCenter.x - x, screenCenter.y + y,
+                      screenCenter.x + x, screenCenter.y + y);
+  }
+
+  // Draw drill hole as filled circle (dark)
   int drillRadius = radius / 2;
   auto& holeColor = KiCadColors::PadHole;
   SDL_SetRenderDrawColor(renderer_, holeColor.r, holeColor.g, holeColor.b, holeColor.a);
-  SDL_Rect drillRect = {screenCenter.x - drillRadius, screenCenter.y - drillRadius,
-                        drillRadius * 2, drillRadius * 2};
-  SDL_RenderFillRect(renderer_, &drillRect);
+  for (int y = -drillRadius; y <= drillRadius; y++) {
+    int x = static_cast<int>(std::sqrt(drillRadius * drillRadius - y * y));
+    SDL_RenderDrawLine(renderer_,
+                      screenCenter.x - x, screenCenter.y + y,
+                      screenCenter.x + x, screenCenter.y + y);
+  }
 }
 
 SDL_Color BoardRenderer::getNetColor(int netNo) const {

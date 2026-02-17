@@ -89,7 +89,9 @@ SimpleGridRouter::Result SimpleGridRouter::findPath(
   allocatedNodes.push_back(std::move(startNode));
   openSet.push(*startPtr);
 
-  const int maxIterations = 10000;
+  // Increased from 10,000 to allow complex board routing
+  // TODO: Replace SimpleGridRouter with proper expansion room algorithm
+  const int maxIterations = 100000;
   int iterations = 0;
 
   while (!openSet.empty() && iterations < maxIterations) {
@@ -97,6 +99,15 @@ SimpleGridRouter::Result SimpleGridRouter::findPath(
 
     GridNode current = openSet.top();
     openSet.pop();
+
+    // Early termination: if very close to goal, create direct connection
+    int dx = std::abs(current.pos.x - gridGoal.x);
+    int dy = std::abs(current.pos.y - gridGoal.y);
+    if (dx <= gridSize * 2 && dy <= gridSize * 2 && current.layer == goalLayer) {
+      // Close enough - reconstruct path to current, then direct to goal
+      closedSet.insert({current.pos.x, current.pos.y, current.layer});
+      break;
+    }
 
     // Check if already visited
     auto nodeKey = std::make_tuple(current.pos.x, current.pos.y, current.layer);

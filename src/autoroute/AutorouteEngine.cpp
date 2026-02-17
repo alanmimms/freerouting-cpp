@@ -3,6 +3,7 @@
 #include "autoroute/MazeSearchAlgo.h"
 #include "autoroute/PushAndShove.h"
 #include "autoroute/LayerCostAnalyzer.h"
+#include "autoroute/ExpansionRoomGenerator.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -675,6 +676,24 @@ void AutorouteEngine::removeAllDoors(ExpansionRoom* room) {
   }
 
   room->clearDoors();
+}
+
+ExpansionRoomGenerator* AutorouteEngine::getRoomGenerator(int netNumber) {
+  // Check if already cached
+  auto it = roomGenerators.find(netNumber);
+  if (it != roomGenerators.end()) {
+    return it->second.get();
+  }
+
+  // Create new generator for this net
+  auto generator = std::make_unique<ExpansionRoomGenerator>(board, netNumber);
+  ExpansionRoomGenerator* ptr = generator.get();
+  roomGenerators[netNumber] = std::move(generator);
+  return ptr;
+}
+
+void AutorouteEngine::clearRoomGenerators() {
+  roomGenerators.clear();
 }
 
 } // namespace freerouting

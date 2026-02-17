@@ -908,11 +908,6 @@ void BoardRenderer::drawVia(const Via* via) {
   int viaHeight = viaBox.ur.y - viaBox.ll.y;
   int viaDiameter = std::max(viaWidth, viaHeight);
 
-  // Skip vias that are too large (>2mm = 20000 internal units)
-  if (viaDiameter > 20000) {
-    return;  // Likely a thermal pad or ground plane, skip
-  }
-
   int radius = static_cast<int>((viaDiameter / 2.0) * scale_ * config_.zoomLevel);
   if (radius < 2) radius = 2;
   if (radius > 100) radius = 100;  // Clamp to reasonable screen size

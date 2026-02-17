@@ -68,12 +68,29 @@ public:
   // Allocates and initializes sectionCount sections
   void allocateSections(int sectionCount);
 
+  // Check if this door represents a via (connects different layers)
+  bool isVia() const { return isVia_; }
+  void setIsVia(bool via) { isVia_ = via; }
+
+  // Get center point of door (for path reconstruction)
+  IntPoint getCenter() const {
+    return centerPoint_;
+  }
+
+  void setCenter(IntPoint center) {
+    centerPoint_ = center;
+  }
+
 protected:
   // Each section can be expanded separately by the maze search algorithm
   std::vector<MazeSearchElement> sectionArray;
 
   // Cached shape (intersection of first and second room shapes)
   mutable const Shape* cachedShape;
+
+  // Via flag and center point (for simplified implementation)
+  bool isVia_ = false;
+  IntPoint centerPoint_{0, 0};
 };
 
 } // namespace freerouting

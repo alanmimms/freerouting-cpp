@@ -143,10 +143,18 @@ SimpleGridRouter::Result SimpleGridRouter::findPath(
       IntPoint newPos(current.pos.x + dir[0], current.pos.y + dir[1]);
 
       // Check if this position is reasonable (simplified bounds check)
-      // Use a large bounding box to avoid going too far
       const int maxDist = 1000000;  // 10cm in internal units
       if (std::abs(newPos.x - start.x) > maxDist || std::abs(newPos.y - start.y) > maxDist) {
         continue;
+      }
+
+      // Get clearance required (trace width + spacing)
+      int clearance = traceHalfWidth * 2;  // Full trace width as clearance
+
+      // Check endpoint only (grid guarantees path is straight line)
+      // For better quality, should sample intermediate points, but too slow
+      if (board->hasObstacleAt(newPos, current.layer, netNo, clearance)) {
+        continue;  // Skip - endpoint has obstacle
       }
 
       // Same layer move

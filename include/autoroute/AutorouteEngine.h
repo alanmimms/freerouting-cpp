@@ -4,6 +4,7 @@
 #include "autoroute/AutorouteControl.h"
 #include "autoroute/CompleteFreeSpaceExpansionRoom.h"
 #include "autoroute/IncompleteFreeSpaceExpansionRoom.h"
+#include "autoroute/ExpansionRoomGenerator.h"
 #include "board/RoutingBoard.h"
 #include "datastructures/Stoppable.h"
 #include "datastructures/TimeLimit.h"
@@ -97,6 +98,12 @@ public:
     return expansionRoomInstanceCount;
   }
 
+  // Get cached room generator for a specific net (creates on first access)
+  ExpansionRoomGenerator* getRoomGenerator(int netNumber);
+
+  // Clear cached room generators (call when board changes significantly)
+  void clearRoomGenerators();
+
 private:
   int netNo; // Current net number
   Stoppable* stoppableThread;
@@ -110,6 +117,9 @@ private:
 
   // Ripup tracking: maps item ID -> number of times it's been ripped up
   std::map<int, int> ripupCounts;
+
+  // Cached room generators per net (for performance)
+  std::map<int, std::unique_ptr<ExpansionRoomGenerator>> roomGenerators;
 
   // Remove all doors from a room
   void removeAllDoors(ExpansionRoom* room);

@@ -67,10 +67,20 @@ public:
   // Check if door already exists to other room
   bool doorExists(const ExpansionRoom* other) const override;
 
+  // Simplified box-based bounds (Phase 1)
+  void setBounds(const IntBox& box) {
+    bounds_ = box;
+  }
+
+  IntBox getBounds() const {
+    return bounds_;
+  }
+
 private:
   const Shape* shape;
   int layer;
   std::vector<ExpansionDoor*> doors;
+  IntBox bounds_;  // Simplified bounds for Phase 1
 };
 
 } // namespace freerouting

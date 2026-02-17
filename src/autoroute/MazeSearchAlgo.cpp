@@ -7,6 +7,12 @@
 #include "board/RoutingBoard.h"
 #include <cmath>
 #include <algorithm>
+#include <queue>
+#include <unordered_set>
+
+// Expansion room includes for future use
+// #include "autoroute/ExpansionRoomGenerator.h"
+// #include "autoroute/FreeSpaceExpansionRoom.h"
 
 namespace freerouting {
 

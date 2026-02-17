@@ -177,6 +177,25 @@ public:
     return footprints_;
   }
 
+  // CRITICAL: Check if location has obstacles (actual spatial query, not just rule areas)
+  // This is what was missing - checks for existing traces/vias/pads from other nets
+  bool hasObstacleAt(IntPoint point, int layer, int netNo, int clearanceRequired) const {
+    // Create search box around point with clearance
+    IntBox searchBox(
+      point.x - clearanceRequired, point.y - clearanceRequired,
+      point.x + clearanceRequired, point.y + clearanceRequired
+    );
+
+    // Use ShapeTree's optimized findTraceObstacles()
+    auto obstacles = shapeTree_.findTraceObstacles(netNo, searchBox, layer, layer);
+    if (!obstacles.empty()) {
+      return true;  // Found items from other nets
+    }
+
+    // Also check rule areas
+    return isTraceProhibited(point, layer, netNo);
+  }
+
 private:
   ShapeTree shapeTree_;  // Spatial index for routing queries
   std::vector<IncompleteConnection> incompleteConnections_;  // Connections to route

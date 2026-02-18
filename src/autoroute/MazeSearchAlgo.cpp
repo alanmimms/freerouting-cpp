@@ -128,7 +128,11 @@ bool MazeSearchAlgo::init(
     const std::vector<Item*>& startItems,
     const std::vector<Item*>& destItems) {
 
+  std::cout << "MazeSearchAlgo::init called with " << startItems.size()
+            << " start items, " << destItems.size() << " dest items\n";
+
   if (startItems.empty() || destItems.empty()) {
+    std::cout << "MazeSearchAlgo::init: FAILED - empty item sets\n";
     return false;
   }
 
@@ -158,6 +162,8 @@ bool MazeSearchAlgo::init(
   // Create incomplete expansion rooms for each start item
   std::vector<IncompleteFreeSpaceExpansionRoom*> startRooms;
 
+  std::cout << "Creating incomplete expansion rooms for " << startItems.size() << " start items\n";
+
   for (Item* item : startItems) {
     if (this->autorouteEngine->isStopRequested()) {
       return false;
@@ -167,6 +173,9 @@ bool MazeSearchAlgo::init(
     // Java gets trace_connection_shape from item, we use bounding box for Phase 1
     IntBox itemBox = item->getBoundingBox();
     int layer = item->firstLayer();
+
+    std::cout << "  Item: layer=" << layer << " bbox=[" << itemBox.ll.x << "," << itemBox.ll.y
+              << " to " << itemBox.ur.x << "," << itemBox.ur.y << "]\n";
 
     // TODO Phase 2: Get actual trace connection shape from item
     // For now, use nullptr for room shape (will expand from contained shape)
@@ -181,11 +190,18 @@ bool MazeSearchAlgo::init(
 
     if (startRoom) {
       startRooms.push_back(startRoom);
+      std::cout << "  Created incomplete room\n";
+    } else {
+      std::cout << "  FAILED to create incomplete room!\n";
     }
   }
 
+  std::cout << "Created " << startRooms.size() << " incomplete start rooms\n";
+
   // Complete the start rooms - this triggers calculateDoors() which creates target doors
   std::vector<CompleteFreeSpaceExpansionRoom*> completedStartRooms;
+
+  std::cout << "Completing " << startRooms.size() << " start rooms...\n";
 
   for (IncompleteFreeSpaceExpansionRoom* room : startRooms) {
     if (this->autorouteEngine->isStopRequested()) {
@@ -197,14 +213,24 @@ bool MazeSearchAlgo::init(
 
     if (completed) {
       completedStartRooms.push_back(completed);
+      std::cout << "  Room completed, has " << completed->getTargetDoors().size() << " target doors\n";
+    } else {
+      std::cout << "  FAILED to complete room!\n";
     }
   }
 
+  std::cout << "Completed " << completedStartRooms.size() << " start rooms\n";
+
   // Add target doors from completed start rooms to the expansion list
   bool startOk = false;
+  int totalDoors = 0;
+  int startDoors = 0;
 
   for (CompleteFreeSpaceExpansionRoom* room : completedStartRooms) {
-    for (TargetItemExpansionDoor* door : room->getTargetDoors()) {
+    const auto& targetDoors = room->getTargetDoors();
+    totalDoors += static_cast<int>(targetDoors.size());
+
+    for (TargetItemExpansionDoor* door : targetDoors) {
       if (this->autorouteEngine->isStopRequested()) {
         return false;
       }
@@ -213,6 +239,8 @@ bool MazeSearchAlgo::init(
       if (door->isDestinationDoor()) {
         continue;
       }
+
+      startDoors++;
 
       // Create initial maze list element for this door
       // Java calculates center of gravity and sorting value based on distance
@@ -243,6 +271,13 @@ bool MazeSearchAlgo::init(
       mazeExpansionList.add(listElement);
       startOk = true;
     }
+  }
+
+  // Debug: Report door statistics
+  if (totalDoors > 0 || startDoors > 0) {
+    std::cout << "MazeSearchAlgo::init: Created " << completedStartRooms.size()
+              << " start rooms, " << totalDoors << " total doors, "
+              << startDoors << " start doors added to expansion list\n";
   }
 
   return startOk;

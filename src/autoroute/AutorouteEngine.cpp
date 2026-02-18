@@ -4,6 +4,7 @@
 #include "autoroute/PushAndShove.h"
 #include "autoroute/LayerCostAnalyzer.h"
 #include "autoroute/ExpansionRoomGenerator.h"
+#include "autoroute/ObstacleExpansionRoom.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -697,9 +698,54 @@ void AutorouteEngine::clearRoomGenerators() {
 }
 
 void AutorouteEngine::completeNeighbourRooms(ExpansionRoom* room) {
-  // TODO: Complete implementation
-  // This method should complete all neighbour rooms to ensure doors don't change
-  // For now, this is a stub
+  // Complete all neighbour rooms to ensure doors don't change during expansion
+  // Java: AutorouteEngine.complete_neighbour_rooms()
+
+  auto* completeRoom = dynamic_cast<CompleteExpansionRoom*>(room);
+  if (!completeRoom) {
+    return;
+  }
+
+  auto& doors = completeRoom->getDoors();
+  if (doors.empty()) {
+    return;
+  }
+
+  // Snapshot doors to avoid iterator invalidation during completion
+  // This changes complexity from O(N^2) to O(N)
+  std::vector<ExpansionDoor*> doorsSnapshot = doors;
+
+  for (ExpansionDoor* currDoor : doorsSnapshot) {
+    // Get the neighbour room on the other side of this door
+    ExpansionRoom* neighbourRoom = currDoor->otherRoom(room);
+    if (!neighbourRoom) {
+      continue;
+    }
+
+    // If neighbour is an incomplete room, complete it
+    auto* incompleteNeighbour = dynamic_cast<IncompleteFreeSpaceExpansionRoom*>(neighbourRoom);
+    if (incompleteNeighbour) {
+      completeExpansionRoom(incompleteNeighbour);
+      continue;
+    }
+
+    // If neighbour is an obstacle room without doors calculated, calculate them
+    auto* obstacleNeighbour = dynamic_cast<ObstacleExpansionRoom*>(neighbourRoom);
+    if (obstacleNeighbour) {
+      if (!obstacleNeighbour->allDoorsCalculated()) {
+        calculateDoors(obstacleNeighbour);
+        obstacleNeighbour->setDoorsCalculated(true);
+      }
+    }
+  }
+}
+
+void AutorouteEngine::calculateDoors(ObstacleExpansionRoom* room) {
+  // Calculate doors for an obstacle room by finding all neighbors
+  // Java: AutorouteEngine.calculate_doors() lines 459-469
+
+  // TODO Phase 1: Minimal implementation - do nothing for now
+  // This will be expanded in Phase 2 to generate doors
   (void)room;
 }
 

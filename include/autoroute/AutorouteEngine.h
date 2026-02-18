@@ -127,6 +127,9 @@ private:
   // Remove all doors from a room
   void removeAllDoors(ExpansionRoom* room);
 
+  // Room completion helpers
+  void calculateDoors(class ObstacleExpansionRoom* room);
+
   // Helper methods for routing
   AutorouteResult createDirectRoute(IntPoint start, IntPoint goal, int layer,
                                      const AutorouteControl& ctrl,

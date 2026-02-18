@@ -635,6 +635,8 @@ void AutorouteEngine::removeCompleteExpansionRoom(CompleteFreeSpaceExpansionRoom
 CompleteFreeSpaceExpansionRoom* AutorouteEngine::completeExpansionRoom(
     IncompleteFreeSpaceExpansionRoom* incompleteRoom) {
 
+  std::cout << "AutorouteEngine::completeExpansionRoom called\n";
+
   if (!incompleteRoom) return nullptr;
 
   // Create complete room with same shape and layer
@@ -660,6 +662,18 @@ CompleteFreeSpaceExpansionRoom* AutorouteEngine::completeExpansionRoom(
 
   // Remove the incomplete room
   removeIncompleteExpansionRoom(incompleteRoom);
+
+  // CRITICAL: Generate doors for the completed room
+  // This creates target doors to connectable items on the board
+  // Java: calls SortedRoomNeighbours.calculate() which handles door generation
+  // For CompleteFreeSpaceExpansionRoom, we need to call door generation directly
+  // since calculateDoors() is only for ObstacleExpansionRoom
+  //
+  // NOTE: We can't call calculateDoors() directly as it expects ObstacleExpansionRoom,
+  // but we can call SortedRoomNeighbours::calculate() which works for any ExpansionRoom
+  std::cout << "About to call SortedRoomNeighbours::calculate...\n";
+  SortedRoomNeighbours::calculate(completePtr, this);
+  std::cout << "Returned from SortedRoomNeighbours::calculate\n";
 
   return completePtr;
 }

@@ -25,18 +25,20 @@ CompleteExpansionRoom* SortedRoomNeighbours::calculate(ExpansionRoom* room,
     return nullptr;
   }
 
-  // If room is already complete, return it
-  auto* completeRoom = dynamic_cast<CompleteExpansionRoom*>(room);
-  if (completeRoom) {
-    return completeRoom;
-  }
+  // Get complete room (either already complete or complete it now)
+  CompleteExpansionRoom* completeRoom = nullptr;
 
-  // If room is incomplete, complete it first
-  auto* incompleteRoom = dynamic_cast<IncompleteFreeSpaceExpansionRoom*>(room);
-  if (incompleteRoom) {
-    completeRoom = autorouteEngine->completeExpansionRoom(incompleteRoom);
-    if (!completeRoom) {
-      return nullptr;
+  // Try as already-complete room first
+  completeRoom = dynamic_cast<CompleteExpansionRoom*>(room);
+
+  // If not complete, try to complete it
+  if (!completeRoom) {
+    auto* incompleteRoom = dynamic_cast<IncompleteFreeSpaceExpansionRoom*>(room);
+    if (incompleteRoom) {
+      completeRoom = autorouteEngine->completeExpansionRoom(incompleteRoom);
+      if (!completeRoom) {
+        return nullptr;
+      }
     }
   }
 
@@ -51,8 +53,15 @@ CompleteExpansionRoom* SortedRoomNeighbours::calculate(ExpansionRoom* room,
 
   // Try to downcast to CompleteFreeSpaceExpansionRoom (most common case)
   auto* freeSpaceRoom = dynamic_cast<CompleteFreeSpaceExpansionRoom*>(completeRoom);
+  std::cout << "SortedRoomNeighbours: completeRoom=" << (void*)completeRoom
+            << ", freeSpaceRoom=" << (void*)freeSpaceRoom << "\n";
   if (freeSpaceRoom) {
+    std::cout << "Calling createTargetDoorsForRoom...\n";
     createTargetDoorsForRoom(freeSpaceRoom, autorouteEngine);
+    std::cout << "After createTargetDoorsForRoom, room has "
+              << freeSpaceRoom->getTargetDoors().size() << " target doors\n";
+  } else {
+    std::cout << "WARN: Failed to downcast to CompleteFreeSpaceExpansionRoom\n";
   }
 
   // TODO Phase 2A: Add room-to-room doors
@@ -82,12 +91,22 @@ static void createTargetDoorsForRoom(CompleteFreeSpaceExpansionRoom* room,
   }
 
   const Shape* roomShape = room->getShape();
-  if (!roomShape) {
-    return;
-  }
-
   int roomLayer = room->getLayer();
-  IntBox roomBox = roomShape->getBoundingBox();
+
+  // Get room bounding box
+  // Phase 1: If room has no shape, use entire board as approximation
+  // TODO Phase 2: Room should always have valid shape
+  IntBox roomBox;
+  if (roomShape) {
+    roomBox = roomShape->getBoundingBox();
+    std::cout << "Room bbox=[" << roomBox.ll.x << "," << roomBox.ll.y
+              << " to " << roomBox.ur.x << "," << roomBox.ur.y << "]\n";
+  } else {
+    // Room has no shape - use maximum possible area
+    // This is a Phase 1 workaround to allow door generation to proceed
+    roomBox = IntBox(-kCritInt/2, -kCritInt/2, kCritInt/2, kCritInt/2);
+    std::cout << "WARNING: Room has null shape, using max bbox for door generation\n";
+  }
 
   // Iterate through all board items to find connectable items on this net
   // Java uses spatial search tree for efficiency, but for Phase 1 we iterate all items

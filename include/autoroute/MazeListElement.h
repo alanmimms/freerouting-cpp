@@ -4,7 +4,7 @@
 #include "autoroute/ExpandableObject.h"
 #include "autoroute/CompleteExpansionRoom.h"
 #include "autoroute/MazeSearchElement.h"
-#include "geometry/FloatLine.h"
+#include "geometry/Vector2.h"
 #include <deque>
 
 namespace freerouting {
@@ -36,7 +36,8 @@ public:
   CompleteExpansionRoom* nextRoom;
 
   // Point of the region of the expansion door which has the shortest distance to the backtrack door
-  FloatLine shapeEntry;
+  // TODO: Implement FloatLine properly or use pair of FloatPoints
+  FloatPoint shapeEntry;
 
   bool roomRipped;
   MazeSearchElement::Adjustment adjustment;
@@ -51,7 +52,7 @@ public:
     double pExpansionValue,
     double pSortingValue,
     CompleteExpansionRoom* pNextRoom,
-    FloatLine pShapeEntry,
+    FloatPoint pShapeEntry,
     bool pRoomRipped,
     MazeSearchElement::Adjustment pAdjustment,
     bool pAlreadyChecked);

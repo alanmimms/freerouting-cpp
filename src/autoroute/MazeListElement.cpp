@@ -13,7 +13,7 @@ MazeListElement* MazeListElement::obtain(
     double pExpansionValue,
     double pSortingValue,
     CompleteExpansionRoom* pNextRoom,
-    FloatLine pShapeEntry,
+    FloatPoint pShapeEntry,
     bool pRoomRipped,
     MazeSearchElement::Adjustment pAdjustment,
     bool pAlreadyChecked) {

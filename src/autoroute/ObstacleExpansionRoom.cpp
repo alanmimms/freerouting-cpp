@@ -1,8 +1,16 @@
 #include "autoroute/ObstacleExpansionRoom.h"
 #include "board/Item.h"
-// TODO: PolylineTrace not yet ported
-// #include "board/PolylineTrace.h"
-#include "board/ShapeSearchTree.h"
+
+// Forward declarations for unported types
+// TODO: Remove these stubs once board infrastructure is fully ported
+namespace freerouting {
+  class ShapeSearchTree;  // Spatial indexing structure - not yet ported
+
+  class PolylineTrace : public Item {
+  public:
+    // Stub - will be properly implemented when porting board items
+  };
+}
 
 namespace freerouting {
 
@@ -43,7 +51,7 @@ bool ObstacleExpansionRoom::createOverlapDoor(ObstacleExpansionRoom* other) {
     return false;
   }
 
-  if (!this->item->sharesNet(other->item)) {
+  if (!this->item->sharesNet(*other->item)) {
     return false;
   }
 

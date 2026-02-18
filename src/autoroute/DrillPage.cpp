@@ -10,7 +10,7 @@ DrillPage::DrillPage(IntBox pageShape, RoutingBoard* routingBoard)
     netNo(-1) {
 
   if (board) {
-    int layerCount = board->getLayerCount();
+    int layerCount = board->getLayers().count();
     mazeSearchInfoArray.resize(layerCount);
   }
 }

@@ -39,10 +39,10 @@ add_library(freerouting
   src/autoroute/ExpansionDoor.cpp
   src/autoroute/FreeSpaceExpansionRoom.cpp
   src/autoroute/CompleteFreeSpaceExpansionRoom.cpp
-  # TODO: Re-enable WIP expansion room files after fixing dependencies:
-  # src/autoroute/ObstacleExpansionRoom.cpp
-  # src/autoroute/ExpansionDrill.cpp
-  # src/autoroute/DrillPage.cpp
+  src/autoroute/ObstacleExpansionRoom.cpp
+  src/autoroute/ExpansionDrill.cpp
+  src/autoroute/DrillPage.cpp
+  # TODO: Re-enable DrillPageArray after fixing dependencies:
   # src/autoroute/DrillPageArray.cpp
   src/autoroute/TargetItemExpansionDoor.cpp
   src/autoroute/MazeListElement.cpp

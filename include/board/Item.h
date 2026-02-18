@@ -133,6 +133,20 @@ public:
   // Create a copy of this item with a new ID
   virtual Item* copy(int newId) const = 0;
 
+  // Get the tree shape for spatial indexing
+  // TODO: Implement when ShapeSearchTree is ported
+  virtual const class Shape* getTreeShape(class ShapeSearchTree* tree, int index) const {
+    (void)tree; (void)index;
+    return nullptr;
+  }
+
+  // Get the layer of a specific shape index
+  // TODO: Implement in derived classes that have multiple shapes per item
+  virtual int shapeLayer(int index) const {
+    (void)index;
+    return firstLayer();
+  }
+
   // Comparison for sorting by ID
   bool operator<(const Item& other) const {
     return id_ < other.id_;

@@ -104,6 +104,9 @@ public:
   // Clear cached room generators (call when board changes significantly)
   void clearRoomGenerators();
 
+  // Complete neighbour rooms to ensure doors won't change during expansion
+  void completeNeighbourRooms(ExpansionRoom* room);
+
 private:
   int netNo; // Current net number
   Stoppable* stoppableThread;

@@ -5,6 +5,7 @@
 #include "autoroute/AutorouteEngine.h"
 #include "autoroute/DestinationDistance.h"
 #include "autoroute/ExpandableObject.h"
+#include "autoroute/MazeListElement.h"
 #include "geometry/Vector2.h"
 #include <vector>
 #include <queue>
@@ -16,31 +17,17 @@ namespace freerouting {
 // Forward declarations
 class Item;
 class ExpansionRoom;
+class ExpansionDoor;
+class ObstacleExpansionRoom;
+class Trace;
+
+// Simplified FloatLine forward declaration (defined in .cpp)
+struct FloatLine;
 
 // Maze search algorithm for autorouting via expansion rooms
 // Uses A* search to find paths through free space
 class MazeSearchAlgo {
 public:
-  // Element in the maze expansion priority queue
-  struct MazeListElement {
-    ExpandableObject* door;          // The expansion door
-    int sectionNo;                   // Section number in the door
-    ExpansionRoom* nextRoom;         // Room to expand into
-    int layer;                       // Layer number
-    IntPoint location;               // Approximate location
-    double sortingValue;             // Priority (g + h cost)
-    double backtrackCost;            // Cost to reach this point (g)
-
-    MazeListElement()
-      : door(nullptr), sectionNo(0), nextRoom(nullptr),
-        layer(0), location(), sortingValue(0.0), backtrackCost(0.0) {}
-
-    // Comparison for priority queue (lower cost = higher priority)
-    bool operator>(const MazeListElement& other) const {
-      return sortingValue > other.sortingValue;
-    }
-  };
-
   // Result of the search
   struct Result {
     bool found;
@@ -75,15 +62,23 @@ private:
   // Destination distance calculator for heuristics
   std::unique_ptr<DestinationDistance> destinationDistance;
 
-  // Priority queue for expansion
-  std::priority_queue<MazeListElement, std::vector<MazeListElement>,
-                      std::greater<MazeListElement>> mazeExpansionList;
+  // Priority queue for expansion - using custom wrapper class
+  class MazeExpansionList {
+  public:
+    void add(MazeListElement* element);
+    MazeListElement* poll();
+    bool empty() const { return queue.empty(); }
+  private:
+    std::vector<MazeListElement*> queue;
+  };
+
+  MazeExpansionList mazeExpansionList;
 
   // The destination door found by search
   ExpandableObject* destinationDoor;
   int sectionNoOfDestinationDoor;
 
-  // Store start/dest items for SimpleGridRouter fallback
+  // Store start/dest items
   std::vector<Item*> startItems;
   std::vector<Item*> destItems;
 
@@ -91,20 +86,30 @@ private:
   bool init(const std::vector<Item*>& startItems,
             const std::vector<Item*>& destItems);
 
-  // Expand from a maze element
-  void expand(const MazeListElement& element);
+  // Main expansion loop - port of Java occupy_next_element()
+  bool occupyNextElement();
 
-  // Calculate the cost to expand into a room/door
-  double calculateExpansionCost(const MazeListElement& from,
-                                 ExpandableObject* toDoor,
-                                 int toSection,
-                                 ExpansionRoom* toRoom) const;
+  // Core expansion methods
+  bool expandToRoomDoors(MazeListElement* pListElement);
+  bool expandToDoor(ExpansionDoor* pToDoor, MazeListElement* pListElement,
+                    int pAddCosts, bool pNextRoomIsThick, MazeSearchElement::Adjustment pAdjustment);
+  bool expandToDoorSection(ExpandableObject* pDoor, int pSectionNo,
+                            const FloatLine& pShapeEntry, MazeListElement* pFromElement,
+                            int pAddCosts, MazeSearchElement::Adjustment pAdjustment);
+  bool expandToTargetDoors(MazeListElement* pListElement, bool pNextRoomIsThick,
+                            bool pCurrDoorIsSmall, const FloatPoint& pShapeEntryMiddle);
+  void expandToOtherLayers(MazeListElement* pListElement);
+  void expandToDrillsOfPage(MazeListElement* pFromElement);
 
-  // Reconstruct the path by backtracking
-  Result reconstructPath();
+  // Ripup and obstacle handling
+  int checkRipup(MazeListElement* pListElement, Item* pObstacleItem, bool pDoorIsSmall);
 
-  // Check if an element is at a destination
-  bool isDestination(ExpandableObject* door) const;
+  // Helper methods
+  bool doorIsSmall(ExpansionDoor* pDoor, double pTraceWidth);
+  bool roomShapeIsThick(ObstacleExpansionRoom* pObstacleRoom);
+  double calcFanoutViaRipupCostFactor(Trace* pTrace);
+  bool enterThroughSmallDoor(MazeListElement* pListElement, Item* pIgnoreItem);
+  bool checkLeavingRippedItem(MazeListElement* pListElement);
 };
 
 } // namespace freerouting

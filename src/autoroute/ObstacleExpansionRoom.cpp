@@ -1,6 +1,7 @@
 #include "autoroute/ObstacleExpansionRoom.h"
 #include "board/Item.h"
-#include "board/PolylineTrace.h"
+// TODO: PolylineTrace not yet ported
+// #include "board/PolylineTrace.h"
 #include "board/ShapeSearchTree.h"
 
 namespace freerouting {

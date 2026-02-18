@@ -696,4 +696,11 @@ void AutorouteEngine::clearRoomGenerators() {
   roomGenerators.clear();
 }
 
+void AutorouteEngine::completeNeighbourRooms(ExpansionRoom* room) {
+  // TODO: Complete implementation
+  // This method should complete all neighbour rooms to ensure doors don't change
+  // For now, this is a stub
+  (void)room;
+}
+
 } // namespace freerouting

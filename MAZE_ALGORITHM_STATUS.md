@@ -49,29 +49,36 @@ include/autoroute/DrillPageArray.h
 include/autoroute/ExpansionRoomGenerator.h
 ```
 
-### ❌ Missing Critical Components
+### ✅ Completed Components
 
 **1. DestinationDistance (A* Heuristic)**
+- ✅ Ported in src/autoroute/DestinationDistance.cpp (346 lines)
 - Calculates admissible lower-bound distance to destination
 - Layer-aware Manhattan distance with via costs
 - Bounding boxes for component/solder/inner layers
-- **Java**: 200+ lines in MazeSearchAlgo.java
 
 **2. Main Algorithm Loop**
-- `find_connection()` - Entry point
-- `occupy_next_element()` - Main expansion step (lines 218-292)
-- `expand_to_room_doors()` - Critical expansion logic (lines 298-469)
-- `expand_to_door_section()` - Add candidates to priority queue
-- **Java**: ~500 lines of core algorithm
+- ✅ Ported in src/autoroute/MazeSearchAlgo.cpp (~700 lines)
+- `findConnection()` - Entry point
+- `occupyNextElement()` - Main expansion step (lines 218-292)
+- `expandToRoomDoors()` - Critical expansion logic (lines 298-469)
+- `expandToDoorSection()` - Add candidates to priority queue
+- `checkRipup()` - Ripup cost calculation with randomization
+- Priority queue (MazeExpansionList wrapper)
+- Helper methods (doorIsSmall, roomShapeIsThick, etc.)
 
-**3. Room Completion**
-- `complete_neighbour_rooms()` - Finalize room shapes and doors
-- Thickness checking (`room_shape_is_thick()`)
-- Nearest border point calculations
-- **Java**: Integrated with AutorouteEngine
+### ❌ Missing Critical Components
 
-**4. Ripup/Shove Logic**
-- `check_ripup()` - Calculate ripup costs (lines 1003-1085)
+**3. Room Completion (BLOCKER)**
+- ⬜ `complete_neighbour_rooms()` - Currently stubbed in AutorouteEngine
+- ⬜ Thickness checking (`room_shape_is_thick()`) - Stubbed, always returns true
+- ⬜ Nearest border point calculations - Missing
+- ⬜ **Java**: Integrated with AutorouteEngine
+- **Why it fails**: Without room completion, no doors are generated, so maze search finds no path
+
+**4. Supporting Infrastructure**
+- ⬜ ShapeSearchTree - Spatial indexing for obstacles
+- ⬜ PolylineTrace - Trace representation with multiple segments
 - `shove_trace_room()` - Try pushing traces sideways (lines 1093-1144)
 - Fanout via protection
 - Detour factor calculations
@@ -297,15 +304,19 @@ Compare against Java freerouting:
 
 ## Next Steps
 
-### Immediate (This Session)
+### Immediate (Completed Feb 17, 2026)
 1. ✅ Document current status
-2. ⬜ Decide on approach (A/B/C)
-3. ⬜ Create minimal viable implementation plan
+2. ✅ Decided on approach: Full port (Option A) per user directive
+3. ✅ Ported DestinationDistance (346 lines)
+4. ✅ Ported MazeSearchAlgo core (~700 lines)
+5. ✅ Fixed linker errors - enabled WIP expansion room classes
+6. ✅ Build succeeds - algorithm compiles and links
+7. ✅ Tested on Issue026 - algorithm runs but finds no routes (expected - room completion stubbed)
 
 ### Short-term (Next Session)
-1. ⬜ Implement DestinationDistance
-2. ⬜ Implement basic occupy_next_element() loop
-3. ⬜ Test on simplest board
+1. ⬜ Implement room completion infrastructure
+2. ⬜ Port ShapeSearchTree for spatial queries
+3. ⬜ Test routing success on simple boards
 
 ### Medium-term (Week 1-2)
 1. ⬜ Complete Phase 1 (MVP)

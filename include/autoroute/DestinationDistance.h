@@ -3,16 +3,18 @@
 
 #include "autoroute/AutorouteControl.h"
 #include "geometry/IntBox.h"
+#include "geometry/Vector2.h"
 #include <vector>
+#include <limits>
 
 namespace freerouting {
 
-// Calculation of a good lower bound for the distance between a new maze expansion
-// element and the destination set of the expansion
-// Uses heuristic distance calculations to guide the search
+// Calculation of a good lower bound for the distance between a new
+// MazeExpansionElement and the destination set of the expansion.
 class DestinationDistance {
 public:
-  // Creates a new DestinationDistance calculator
+  // Creates a new instance of DestinationDistance.
+  // traceCosts and layerActive are arrays of dimension layerCount.
   DestinationDistance(
     const std::vector<AutorouteControl::ExpansionCostFactor>& traceCosts,
     const std::vector<bool>& layerActive,
@@ -22,43 +24,47 @@ public:
   // Add a destination box on a specific layer
   void join(const IntBox& box, int layer);
 
-  // Calculate the lower bound distance from a point on a layer to destinations
-  double calculate(const IntPoint& point, int layer) const;
+  // Calculate distance from a point on a layer
+  double calculate(const FloatPoint& point, int layer);
 
-  // Reset the destination boxes
-  void reset();
+  // Calculate distance from an integer point on a layer
+  double calculate(const IntPoint& point, int layer);
+
+  // Calculate distance from a box on a layer
+  double calculate(const IntBox& box, int layer);
+
+  // Calculate cheap distance (using cheap via costs)
+  double calculateCheapDistance(const IntBox& box, int layer);
 
 private:
   const std::vector<AutorouteControl::ExpansionCostFactor>& traceCosts;
   const std::vector<bool>& layerActive;
-  int layerCount;
-  int activeLayerCount;
-  double minNormalViaCost;
-  double minCheapViaCost;
+  const int layerCount;
+  const int activeLayerCount;
+  const double minCheapViaCost;
 
-  // Cost factors for different layer types
   double minComponentSideTraceCost;
   double maxComponentSideTraceCost;
   double minSolderSideTraceCost;
   double maxSolderSideTraceCost;
   double maxInnerSideTraceCost;
+  // minimum of the maximal trace costs on each inner layer
   double minComponentInnerTraceCost;
+  // minimum of minComponentSideTraceCost and maxInnerSideTraceCost
   double minSolderInnerTraceCost;
+  // minimum of minSolderSideTraceCost and maxInnerSideTraceCost
   double minComponentSolderInnerTraceCost;
+  // minimum of minComponentInnerTraceCost and minSolderInnerTraceCost
+  double minNormalViaCost;
 
-  // Bounding boxes of destination areas
   IntBox componentSideBox;
   IntBox solderSideBox;
   IntBox innerSideBox;
 
-  // Flags indicating if boxes are empty
   bool boxIsEmpty;
   bool componentSideBoxIsEmpty;
   bool solderSideBoxIsEmpty;
   bool innerSideBoxIsEmpty;
-
-  // Helper to calculate distance with cost factor
-  double calculateDistance(const IntPoint& from, const IntBox& to, double costFactor) const;
 };
 
 } // namespace freerouting

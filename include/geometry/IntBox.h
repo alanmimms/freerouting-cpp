@@ -160,6 +160,29 @@ struct IntBox {
   constexpr bool operator!=(const IntBox& other) const {
     return !(*this == other);
   }
+
+  // Compute weighted distance to another box
+  double weightedDistance(const IntBox& other, double horizontalWeight, double verticalWeight) const {
+    double result;
+
+    double maxLlX = std::max(this->ll.x, other.ll.x);
+    double maxLlY = std::max(this->ll.y, other.ll.y);
+    double minUrX = std::min(this->ur.x, other.ur.x);
+    double minUrY = std::min(this->ur.y, other.ur.y);
+
+    if (minUrX >= maxLlX) {
+      result = std::max(verticalWeight * (maxLlY - minUrY), 0.0);
+    } else if (minUrY >= maxLlY) {
+      result = std::max(horizontalWeight * (maxLlX - minUrX), 0.0);
+    } else {
+      double deltaX = maxLlX - minUrX;
+      double deltaY = maxLlY - minUrY;
+      deltaX *= horizontalWeight;
+      deltaY *= verticalWeight;
+      result = std::sqrt(deltaX * deltaX + deltaY * deltaY);
+    }
+    return result;
+  }
 };
 
 } // namespace freerouting

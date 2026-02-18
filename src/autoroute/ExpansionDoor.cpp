@@ -1,7 +1,5 @@
 #include "autoroute/ExpansionDoor.h"
 #include "autoroute/CompleteExpansionRoom.h"
-#include "autoroute/CompleteFreeSpaceExpansionRoom.h"
-#include "autoroute/AutorouteEngine.h"
 
 namespace freerouting {
 
@@ -50,66 +48,6 @@ void ExpansionDoor::allocateSections(int sectionCount) {
     return;  // Already allocated
   }
   sectionArray.resize(sectionCount);
-}
-
-std::vector<FloatLine> ExpansionDoor::getSectionSegments(double offset) {
-  constexpr double traceWidthTolerance = 0.5;  // AutorouteEngine::TRACE_WIDTH_TOLERANCE
-  double adjustedOffset = offset + traceWidthTolerance;
-
-  const Shape* doorShape = this->getShape();
-  if (!doorShape || doorShape->isEmpty()) {
-    return {};  // Empty result
-  }
-
-  FloatLine doorLineSegment;
-  FloatLine shrinkedLineSegment;
-
-  if (this->dimension == 1) {
-    // 1-dimensional door - get diagonal corner segment
-    // For now, simplified to use shape center (need full Shape implementation)
-    FloatPoint center = FloatPoint::fromInt(doorShape->getCentroid());
-    doorLineSegment = FloatLine(center, center);
-    shrinkedLineSegment = doorLineSegment.shrinkSegment(adjustedOffset);
-  } else if (this->dimension == 2) {
-    // 2-dimensional door
-    CompleteFreeSpaceExpansionRoom* firstFreeRoom =
-      dynamic_cast<CompleteFreeSpaceExpansionRoom*>(firstRoom);
-    CompleteFreeSpaceExpansionRoom* secondFreeRoom =
-      dynamic_cast<CompleteFreeSpaceExpansionRoom*>(secondRoom);
-
-    if (firstFreeRoom && secondFreeRoom) {
-      // Both rooms are free space - calculate restraint line
-      // For now, simplified to use center point
-      FloatPoint center = FloatPoint::fromInt(doorShape->getCentroid());
-      doorLineSegment = FloatLine(center, center);
-
-      if (doorLineSegment.length() < 2.0 * adjustedOffset) {
-        // Door is too small
-        return {};
-      }
-
-      shrinkedLineSegment = doorLineSegment.shrinkSegment(adjustedOffset);
-    } else {
-      // Obstacle room - use gravity point
-      FloatPoint gravityPoint = FloatPoint::fromInt(doorShape->getCentroid());
-      doorLineSegment = FloatLine(gravityPoint, gravityPoint);
-      shrinkedLineSegment = doorLineSegment;
-    }
-  } else {
-    // Unexpected dimension
-    return {};
-  }
-
-  // Calculate number of sections based on door length
-  constexpr double maxDoorSectionWidth = 10.0;  // Multiplied by offset
-  double doorLength = doorLineSegment.length();
-  int sectionCount = static_cast<int>(doorLength / (maxDoorSectionWidth * adjustedOffset)) + 1;
-
-  // Allocate sections
-  this->allocateSections(sectionCount);
-
-  // Divide the shrinked line segment into sections
-  return shrinkedLineSegment.divideSegmentIntoSections(sectionCount);
 }
 
 } // namespace freerouting

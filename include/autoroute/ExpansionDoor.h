@@ -5,7 +5,6 @@
 #include "autoroute/ExpansionRoom.h"
 #include "autoroute/MazeSearchElement.h"
 #include "geometry/Shape.h"
-#include "geometry/FloatLine.h"
 #include <vector>
 #include <memory>
 
@@ -68,10 +67,6 @@ public:
 
   // Allocates and initializes sectionCount sections
   void allocateSections(int sectionCount);
-
-  // Calculates the line segments of the sections of this door
-  // offset is typically the trace half-width
-  std::vector<FloatLine> getSectionSegments(double offset);
 
   // Check if this door represents a via (connects different layers)
   bool isVia() const { return isVia_; }

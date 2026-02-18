@@ -271,30 +271,90 @@ MazeSearchAlgo::Result MazeSearchAlgo::findConnection() {
   result.destinationDoor = this->destinationDoor;
   result.sectionNo = this->sectionNoOfDestinationDoor;
 
-  // Phase 1: Build simple 2-point path from start item to dest item
-  // Java uses LocateFoundConnectionAlgo for sophisticated path building via backtracking
-  // For Phase 1, rooms don't have shapes yet, so doors don't have valid shapes for backtracking
-  // TODO Phase 2: Implement proper backtracking once rooms have valid shapes
+  // Phase 2: Build path by backtracking through doors
+  // Java uses LocateFoundConnectionAlgo for sophisticated path building
+  // We implement a simplified version that follows backtrack links
 
   std::vector<IntPoint> pathPoints;
   std::vector<int> pathLayers;
 
-  // Get start and dest items from autorouteEngine's current connection
-  if (!this->startItems.empty() && !this->destItems.empty()) {
+  // Walk backwards from destination to start, collecting waypoints
+  ExpandableObject* currDoor = this->destinationDoor;
+  int currSection = this->sectionNoOfDestinationDoor;
+
+  struct BacktrackElement {
+    ExpandableObject* door;
+    int sectionNo;
+    IntPoint waypoint;
+    int layer;
+  };
+
+  std::vector<BacktrackElement> backtrackPath;
+
+  // Follow backtrack chain
+  while (currDoor != nullptr) {
+    MazeSearchElement& element = currDoor->getMazeSearchElement(currSection);
+
+    // Extract waypoint from door
+    IntPoint waypoint(0, 0);
+    int layer = 0;
+
+    // Try to get waypoint from door's target item (for TargetItemExpansionDoor)
+    auto* targetDoor = dynamic_cast<TargetItemExpansionDoor*>(currDoor);
+    if (targetDoor && targetDoor->item) {
+      IntBox itemBox = targetDoor->item->getBoundingBox();
+      waypoint = IntPoint((itemBox.ll.x + itemBox.ur.x) / 2,
+                         (itemBox.ll.y + itemBox.ur.y) / 2);
+      layer = targetDoor->item->firstLayer();
+    } else {
+      // For regular doors, try to get from door shape
+      const Shape* doorShape = currDoor->getShape();
+      if (doorShape) {
+        IntBox bbox = doorShape->getBoundingBox();
+        waypoint = IntPoint((bbox.ll.x + bbox.ur.x) / 2,
+                           (bbox.ll.y + bbox.ur.y) / 2);
+      }
+
+      // Try to get layer from door's room
+      auto* door = dynamic_cast<ExpansionDoor*>(currDoor);
+      if (door && door->firstRoom) {
+        layer = door->firstRoom->getLayer();
+      }
+    }
+
+    backtrackPath.push_back({currDoor, currSection, waypoint, layer});
+
+    // Follow backtrack link
+    ExpandableObject* nextDoor = element.backtrackDoor;
+    if (nextDoor) {
+      currDoor = nextDoor;
+      currSection = element.sectionNoOfBacktrackDoor;
+    } else {
+      break;  // Reached start
+    }
+  }
+
+  // Reverse to get start → dest order
+  std::reverse(backtrackPath.begin(), backtrackPath.end());
+
+  // Build path from backtrack elements
+  for (const auto& elem : backtrackPath) {
+    pathPoints.push_back(elem.waypoint);
+    pathLayers.push_back(elem.layer);
+  }
+
+  // If we got an empty path, fall back to simple 2-point
+  if (pathPoints.empty() && !this->startItems.empty() && !this->destItems.empty()) {
     Item* startItem = this->startItems[0];
     Item* destItem = this->destItems[0];
 
-    // Create simple 2-point path from start bbox center to dest bbox center
     IntBox startBox = startItem->getBoundingBox();
     IntBox destBox = destItem->getBoundingBox();
 
-    IntPoint startCenter((startBox.ll.x + startBox.ur.x) / 2,
-                        (startBox.ll.y + startBox.ur.y) / 2);
-    IntPoint destCenter((destBox.ll.x + destBox.ur.x) / 2,
-                       (destBox.ll.y + destBox.ur.y) / 2);
-
-    pathPoints.push_back(startCenter);
-    pathPoints.push_back(destCenter);
+    pathPoints.push_back(IntPoint((startBox.ll.x + startBox.ur.x) / 2,
+                                 (startBox.ll.y + startBox.ur.y) / 2));
+    pathPoints.push_back(IntPoint((destBox.ll.x + destBox.ur.x) / 2,
+                                 (destBox.ll.y + destBox.ur.y) / 2));
 
     pathLayers.push_back(startItem->firstLayer());
     pathLayers.push_back(destItem->firstLayer());

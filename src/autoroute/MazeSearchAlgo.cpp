@@ -153,13 +153,99 @@ bool MazeSearchAlgo::init(
   }
 
   // Initialize expansion from start items
-  // In a full implementation, this would:
-  // 1. Get expansion rooms containing start items
-  // 2. Add their doors to the maze expansion list
-  // 3. Calculate initial costs
+  // Java: MazeSearchAlgo.init() lines 1168-1235
 
-  // For now, simplified placeholder
-  return true;
+  // Create incomplete expansion rooms for each start item
+  std::vector<IncompleteFreeSpaceExpansionRoom*> startRooms;
+
+  for (Item* item : startItems) {
+    if (this->autorouteEngine->isStopRequested()) {
+      return false;
+    }
+
+    // For each item, create an incomplete room
+    // Java gets trace_connection_shape from item, we use bounding box for Phase 1
+    IntBox itemBox = item->getBoundingBox();
+    int layer = item->firstLayer();
+
+    // TODO Phase 2: Get actual trace connection shape from item
+    // For now, use nullptr for room shape (will expand from contained shape)
+    const Shape* roomShape = nullptr;
+
+    // Contained shape is the area we can expand from (item bounding box)
+    // Convert IntBox to Shape - for now use nullptr, room will be completed by engine
+    const Shape* containedShape = nullptr;  // TODO: Create shape from itemBox
+
+    IncompleteFreeSpaceExpansionRoom* startRoom =
+      this->autorouteEngine->addIncompleteExpansionRoom(roomShape, layer, containedShape);
+
+    if (startRoom) {
+      startRooms.push_back(startRoom);
+    }
+  }
+
+  // Complete the start rooms - this triggers calculateDoors() which creates target doors
+  std::vector<CompleteFreeSpaceExpansionRoom*> completedStartRooms;
+
+  for (IncompleteFreeSpaceExpansionRoom* room : startRooms) {
+    if (this->autorouteEngine->isStopRequested()) {
+      return false;
+    }
+
+    CompleteFreeSpaceExpansionRoom* completed =
+      this->autorouteEngine->completeExpansionRoom(room);
+
+    if (completed) {
+      completedStartRooms.push_back(completed);
+    }
+  }
+
+  // Add target doors from completed start rooms to the expansion list
+  bool startOk = false;
+
+  for (CompleteFreeSpaceExpansionRoom* room : completedStartRooms) {
+    for (TargetItemExpansionDoor* door : room->getTargetDoors()) {
+      if (this->autorouteEngine->isStopRequested()) {
+        return false;
+      }
+
+      // Skip destination doors (we only expand from start doors)
+      if (door->isDestinationDoor()) {
+        continue;
+      }
+
+      // Create initial maze list element for this door
+      // Java calculates center of gravity and sorting value based on distance
+      // For Phase 1, use simple defaults
+
+      FloatPoint doorCenter(0.0, 0.0);  // TODO: Calculate actual center
+
+      // Convert FloatPoint to IntPoint for distance calculation
+      IntPoint doorCenterInt(static_cast<int>(doorCenter.x), static_cast<int>(doorCenter.y));
+
+      double sortingValue = this->destinationDistance->calculate(
+        doorCenterInt, room->getLayer());
+
+      MazeListElement* listElement = MazeListElement::obtain(
+        door,                              // door
+        0,                                 // section number
+        nullptr,                           // backtrack door
+        0,                                 // backtrack section
+        0,                                 // expansion value
+        sortingValue,                      // sorting value
+        room,                              // room
+        doorCenter,                        // shape entry (FloatPoint)
+        false,                             // room ripped
+        MazeSearchElement::Adjustment::None, // adjustment
+        false                              // already checked
+      );
+
+      mazeExpansionList.add(listElement);
+      startOk = true;
+    }
+  }
+
+  return startOk;
 }
 
 MazeSearchAlgo::Result MazeSearchAlgo::findConnection() {

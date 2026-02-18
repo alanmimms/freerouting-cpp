@@ -5,6 +5,7 @@
 #include "autoroute/LayerCostAnalyzer.h"
 #include "autoroute/ExpansionRoomGenerator.h"
 #include "autoroute/ObstacleExpansionRoom.h"
+#include "autoroute/SortedRoomNeighbours.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -744,9 +745,18 @@ void AutorouteEngine::calculateDoors(ObstacleExpansionRoom* room) {
   // Calculate doors for an obstacle room by finding all neighbors
   // Java: AutorouteEngine.calculate_doors() lines 459-469
 
-  // TODO Phase 1: Minimal implementation - do nothing for now
-  // This will be expanded in Phase 2 to generate doors
-  (void)room;
+  if (!room) {
+    return;
+  }
+
+  // Dispatcher - chooses algorithm based on search tree type
+  // For now, always use general SortedRoomNeighbours
+  // TODO Phase 2D: Add specialized 45/90-degree variants for optimization
+
+  CompleteExpansionRoom* result = SortedRoomNeighbours::calculate(room, this);
+
+  // Result may be the same room or a newly created complete room
+  (void)result;
 }
 
 } // namespace freerouting

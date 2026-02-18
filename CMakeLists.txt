@@ -51,6 +51,7 @@ add_library(freerouting
   src/autoroute/MazeSearchAlgo.cpp
   src/autoroute/SimpleGridRouter.cpp
   src/autoroute/ExpansionRoomGenerator.cpp
+  src/autoroute/SortedRoomNeighbours.cpp
   src/autoroute/BatchAutorouter.cpp
   src/autoroute/PushAndShove.cpp
   src/board/DrcEngine.cpp

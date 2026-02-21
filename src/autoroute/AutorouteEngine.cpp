@@ -6,6 +6,8 @@
 #include "autoroute/ExpansionRoomGenerator.h"
 #include "autoroute/ObstacleExpansionRoom.h"
 #include "autoroute/SortedRoomNeighbours.h"
+#include "autoroute/ShapeSearchTree.h"
+#include "geometry/TileShape.h"
 #include "board/Item.h"
 #include "board/Trace.h"
 #include "board/Via.h"
@@ -31,6 +33,22 @@ void AutorouteEngine::initConnection(int netNumber, Stoppable* stoppable, TimeLi
   netNo = netNumber;
   stoppableThread = stoppable;
   timeLimit = limit;
+
+  // Create or rebuild spatial search tree for expansion rooms
+  // Java: AutorouteEngine maintains a ShapeSearchTree
+  if (!autorouteSearchTree) {
+    autorouteSearchTree = new ShapeSearchTree();
+  } else {
+    autorouteSearchTree->clear();
+  }
+
+  // Populate search tree with existing complete rooms
+  // This allows room-to-room door creation to find neighbors efficiently
+  for (const auto& room : completeExpansionRooms) {
+    if (room->getShape()) {
+      autorouteSearchTree->insert(room.get());
+    }
+  }
 }
 
 AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
@@ -59,7 +77,6 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
 
   // Determine start and destination layers
   int startLayer = startSet[0]->firstLayer();
-  int destLayer = destSet[0]->firstLayer();
 
   // Calculate ripup cost limit (increases with pass number if ripup allowed)
   int ripupCostLimit = ctrl.ripupAllowed ? ctrl.ripupCosts : 0;
@@ -70,8 +87,6 @@ AutorouteEngine::AutorouteResult AutorouteEngine::autorouteConnection(
   // with vias at both ends if that layer is less congested
 
   int routingLayer = startLayer;
-  bool startMultilayer = (startSet[0]->lastLayer() > startSet[0]->firstLayer());
-  bool destMultilayer = (destSet[0]->lastLayer() > destSet[0]->firstLayer());
 
   // Analyze layer congestion in the routing region
   IntBox routingRegion(
@@ -337,9 +352,9 @@ AutorouteEngine::AutorouteResult AutorouteEngine::routeWithVia(
 
 // Helper: Try routing with via at specific location
 AutorouteEngine::AutorouteResult AutorouteEngine::tryRouteWithViaAt(
-    IntPoint viaLocation, IntPoint start, IntPoint goal,
+    IntPoint viaLocation, IntPoint /* start */, IntPoint /* goal */,
     int startLayer, int destLayer,
-    const AutorouteControl& ctrl, int ripupCostLimit, std::vector<Item*>& rippedItems) {
+    const AutorouteControl& ctrl, int /* ripupCostLimit */, std::vector<Item*>& /* rippedItems */) {
 
   // Check if a via already exists at this location
   Via* existingVia = findViaAtLocation(viaLocation, netNo);
@@ -561,6 +576,12 @@ bool AutorouteEngine::isStopRequested() const {
 }
 
 void AutorouteEngine::clear() {
+  // Clear spatial search tree
+  if (autorouteSearchTree) {
+    delete autorouteSearchTree;
+    autorouteSearchTree = nullptr;
+  }
+
   // Remove complete rooms from search tree if needed
   completeExpansionRooms.clear();
   incompleteExpansionRooms.clear();
@@ -655,11 +676,40 @@ CompleteFreeSpaceExpansionRoom* AutorouteEngine::completeExpansionRoom(
     }
   }
 
+  // PHASE 3B: Complete the room shape BEFORE removing incomplete room
+  // Use ExpansionRoomGenerator to calculate proper room shape with obstacle avoidance
+  if (incompleteRoom->getContainedShape()) {
+    ExpansionRoomGenerator* roomGen = getRoomGenerator(netNo);
+    if (roomGen && autorouteSearchTree && board) {
+      const TileShape* containedShape = dynamic_cast<const TileShape*>(incompleteRoom->getContainedShape());
+
+      if (containedShape) {
+        TileShape* finalShape = roomGen->completeRoomShape(
+          incompleteRoom,
+          containedShape,
+          incompleteRoom->getLayer(),
+          netNo,
+          autorouteSearchTree
+        );
+
+        if (finalShape && !finalShape->isEmpty()) {
+          // Safe cast - TileShape now inherits from Shape
+          completeRoom->setShape(static_cast<const Shape*>(finalShape));
+        }
+      }
+    }
+  }
+
   auto* completePtr = completeRoom.get();
   completeExpansionRooms.push_back(std::move(completeRoom));
 
-  // Remove the incomplete room
+  // Remove the incomplete room (after we're done using it)
   removeIncompleteExpansionRoom(incompleteRoom);
+
+  // Insert into spatial search tree for efficient neighbor finding
+  if (autorouteSearchTree && completePtr->getShape()) {
+    autorouteSearchTree->insert(completePtr);
+  }
 
   // CRITICAL: Generate doors for the completed room
   // This creates target doors to connectable items on the board
@@ -762,6 +812,33 @@ void AutorouteEngine::calculateDoors(ObstacleExpansionRoom* room) {
 
   // Result may be the same room or a newly created complete room
   (void)result;
+}
+
+void AutorouteEngine::initializeSearchTree() {
+  // Java: AutorouteEngine constructor inserts all board items into search tree
+  // This is critical for door generation to work - rooms need to find items
+  // to create obstacle rooms and doors
+
+  // Always clear and recreate search tree to avoid duplicates
+  if (autorouteSearchTree) {
+    autorouteSearchTree->clear();
+  } else {
+    autorouteSearchTree = new ShapeSearchTree();
+  }
+
+  if (!board) {
+    return;
+  }
+
+  // Insert ALL board items into search tree (pads, pins, vias, traces)
+  // Everything is a potential obstacle or target for routing
+  const auto& items = board->getItems();
+
+  for (const auto& itemPtr : items) {
+    if (itemPtr) {
+      autorouteSearchTree->insert(itemPtr.get());
+    }
+  }
 }
 
 } // namespace freerouting

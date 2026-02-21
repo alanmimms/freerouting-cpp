@@ -75,6 +75,8 @@ bool CommandLineArgs::parse(int argc, const char* argv[],
       }
     } else if (arg == "--no-optimize") {
       args.optimize = false;
+    } else if (arg == "--remove-existing" || arg == "--clear-routes") {
+      args.removeExistingRoutes = true;
     } else if (arg == "--no-drc") {
       args.runDrc = false;
     } else if (arg == "--stop-on-drc-error") {
@@ -137,6 +139,7 @@ void CommandLineArgs::printUsage(const char* programName) {
   std::cout << "  -p, --passes N          Maximum routing passes (default: 10)\n";
   std::cout << "  -t, --threads N         Number of threads (default: auto-detect)\n";
   std::cout << "  --time-limit N          Time limit in seconds (default: no limit)\n";
+  std::cout << "  --remove-existing       Remove all existing traces/vias before routing\n";
   std::cout << "  --no-optimize           Skip route optimization\n";
   std::cout << "  --no-drc                Skip design rule checking\n";
   std::cout << "  --stop-on-drc-error     Stop if DRC errors are found\n";

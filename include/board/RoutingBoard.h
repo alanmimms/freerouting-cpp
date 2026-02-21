@@ -204,7 +204,7 @@ private:
   // Find connected components within a set of items on the same net
   // Returns a vector of components, where each component is a vector of connected items
   std::vector<std::vector<Item*>> findConnectedComponents(
-      const std::vector<Item*>& netItems, int netNumber) const {
+      const std::vector<Item*>& netItems, int /* netNumber */) const {
 
     std::vector<std::vector<Item*>> components;
     std::set<Item*> visited;

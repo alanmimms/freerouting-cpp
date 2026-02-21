@@ -3,11 +3,14 @@
 
 #include "FixedState.h"
 #include "geometry/IntBox.h"
+#include "geometry/IntBoxShape.h"
 #include "geometry/Vector2.h"
 #include "core/Types.h"
 #include "autoroute/ItemAutorouteInfo.h"
+#include "autoroute/ShapeSearchTree.h"
 #include <vector>
 #include <algorithm>
+#include <memory>
 
 namespace freerouting {
 
@@ -19,9 +22,11 @@ class BasicBoard;
 //
 // NOTE: This is a simplified Phase 4 version focusing on essential functionality
 // Full shape/geometry integration will be added in later phases
-class Item {
+class Item : public SearchTreeObject {
 public:
-  virtual ~Item() = default;
+  virtual ~Item() {
+    delete cachedShape_;  // Clean up cached shape
+  }
 
   // Get unique identification number
   int getId() const { return id_; }
@@ -133,18 +138,31 @@ public:
   // Create a copy of this item with a new ID
   virtual Item* copy(int newId) const = 0;
 
+  // ========== SearchTreeObject Interface ==========
+
   // Get the tree shape for spatial indexing
-  // TODO: Implement when ShapeSearchTree is ported
-  virtual const class Shape* getTreeShape(class ShapeSearchTree* tree, int index) const {
-    (void)tree; (void)index;
-    return nullptr;
+  virtual const class Shape* getTreeShape(int shapeIndex) const override {
+    (void)shapeIndex;
+    // Create shape on demand from bounding box
+    if (!cachedShape_) {
+      IntBox bbox = getBoundingBox();
+      cachedShape_ = new IntBoxShape(bbox);
+    }
+    return cachedShape_;
   }
 
   // Get the layer of a specific shape index
-  // TODO: Implement in derived classes that have multiple shapes per item
-  virtual int shapeLayer(int index) const {
-    (void)index;
+  virtual int getShapeLayer(int shapeIndex) const override {
+    (void)shapeIndex;
     return firstLayer();
+  }
+
+  // Check if this item is a trace obstacle (already implemented above)
+  // virtual bool isTraceObstacle(int netNumber) const override - already defined
+
+  // Number of shapes this item has
+  virtual int treeShapeCount() const override {
+    return 1;  // Most items have 1 shape, vias may override
   }
 
   // Comparison for sorting by ID
@@ -178,6 +196,7 @@ private:
   int id_;                         // Unique identifier
   int componentNumber_;            // Component this belongs to (0 = none)
   FixedState fixedState_;          // Fixed/moveable state
+  mutable IntBoxShape* cachedShape_ = nullptr;  // Cached shape for search tree
   BasicBoard* board_;              // Board this item is on
   bool onBoard_;                   // True if inserted into board
   ItemAutorouteInfo autorouteInfo_; // Routing metadata

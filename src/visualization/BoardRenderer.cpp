@@ -644,10 +644,15 @@ void BoardRenderer::renderTraces() {
     int lastLayer = layers.count() - 1;
 
     const auto& items = board_->getItems();
+
+    static bool debugLogged = false;
+    int traceCount = 0;
+
     for (size_t i = 0; i < items.size(); ++i) {
       if (!items[i]) continue;  // Safety check
       const Trace* trace = dynamic_cast<const Trace*>(items[i].get());
       if (trace) {
+        traceCount++;
         int layer = trace->getLayer();
 
         // For now, only render outer signal layers (F.Cu and B.Cu)
@@ -658,6 +663,12 @@ void BoardRenderer::renderTraces() {
         }
         // TODO: Add layer filtering UI to selectively show inner layers
       }
+    }
+
+    if (!debugLogged) {
+      std::cerr << "DEBUG renderTraces: Found " << traceCount << " traces out of "
+                << items.size() << " total items" << std::endl;
+      debugLogged = true;
     }
   } catch (...) {
     // Silently handle exceptions from concurrent access
@@ -787,6 +798,15 @@ void BoardRenderer::drawTrace(const Trace* trace) {
   IntPoint start = trace->getStart();
   IntPoint end = trace->getEnd();
 
+  static int debugCount = 0;
+  if (debugCount < 5) {
+    std::cerr << "DEBUG drawTrace #" << debugCount << ": layer=" << trace->getLayer()
+              << " start=(" << start.x << "," << start.y << ")"
+              << " end=(" << end.x << "," << end.y << ")"
+              << " halfWidth=" << trace->getHalfWidth() << std::endl;
+    debugCount++;
+  }
+
   // Sanity check: reject traces with extreme coordinates (outside reasonable board bounds)
   // Max reasonable coordinate: 1 meter = 10,000,000 internal units
   constexpr int kMaxReasonableCoord = 10000000;
@@ -816,11 +836,16 @@ void BoardRenderer::drawTrace(const Trace* trace) {
 
   // Calculate trace width in screen space (use actual physical width)
   int halfWidth = static_cast<int>(trace->getHalfWidth() * scale_ * config_.zoomLevel);
-  if (halfWidth < 1) halfWidth = 1;
+  // Ensure traces are visible: minimum 2 pixels half-width (4 pixels full width)
+  if (halfWidth < 2) halfWidth = 2;
 
   // Draw trace as thick line using SDL line thickness
   // For very thin traces at low zoom, just draw a single line
   if (halfWidth <= 1) {
+    if (debugCount <= 5) {
+      std::cerr << "  Drawing thin line from (" << p1.x << "," << p1.y
+                << ") to (" << p2.x << "," << p2.y << ")" << std::endl;
+    }
     SDL_RenderDrawLine(renderer_, p1.x, p1.y, p2.x, p2.y);
     return;
   }

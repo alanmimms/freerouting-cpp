@@ -308,6 +308,7 @@ AutorouteAttemptResult BatchAutorouter::autorouteItem(
   // Use AutorouteEngine for pathfinding with obstacle avoidance
   AutorouteEngine engine(board);
   engine.initConnection(netNo, nullptr, nullptr);
+  engine.initializeSearchTree();  // Populate search tree with board items (after initConnection clears it)
 
   // Create AutorouteControl with routing parameters
   AutorouteControl control(board->getLayers().count());
@@ -454,6 +455,7 @@ AutorouteAttemptResult BatchAutorouter::autorouteNetWithMST(
     // Use AutorouteEngine for pathfinding
     AutorouteEngine engine(board);
     engine.initConnection(netNo, nullptr, nullptr);
+    engine.initializeSearchTree();  // Populate search tree with board items (after initConnection clears it)
 
     // Create AutorouteControl with routing parameters
     AutorouteControl control(board->getLayers().count());

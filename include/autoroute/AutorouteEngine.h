@@ -107,6 +107,9 @@ public:
   // Complete neighbour rooms to ensure doors won't change during expansion
   void completeNeighbourRooms(ExpansionRoom* room);
 
+  // Initialize search tree with all board items
+  void initializeSearchTree();
+
 private:
   int netNo; // Current net number
   Stoppable* stoppableThread;

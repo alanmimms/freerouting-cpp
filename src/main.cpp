@@ -224,6 +224,29 @@ int main(int argc, const char* argv[]) {
     log(args.verbosity, 2, "  Board items: " + std::to_string(board->itemCount()));
     log(args.verbosity, 1, "Routing board created");
 
+    // Remove existing routes if requested
+    if (args.removeExistingRoutes) {
+      log(args.verbosity, 1, "Removing existing traces and vias...");
+      int removedCount = 0;
+      std::vector<int> itemsToRemove;
+
+      // Collect IDs of all traces and vias
+      for (const auto& item : board->getItems()) {
+        // Check if item is a Trace or Via using dynamic_cast
+        if (dynamic_cast<Trace*>(item.get()) || dynamic_cast<Via*>(item.get())) {
+          itemsToRemove.push_back(item->getId());
+        }
+      }
+
+      // Remove them
+      for (int id : itemsToRemove) {
+        board->removeItem(id);
+        removedCount++;
+      }
+
+      log(args.verbosity, 1, "  Removed " + std::to_string(removedCount) + " existing routes");
+    }
+
     // Step 1.5: Initialize visualization if requested
     std::atomic<bool> visualizationActive{false};
     std::thread visualizationThread;

@@ -47,6 +47,7 @@ add_library(freerouting
   src/autoroute/TargetItemExpansionDoor.cpp
   src/autoroute/MazeListElement.cpp
   src/autoroute/DestinationDistance.cpp
+  src/autoroute/ShapeSearchTree.cpp
   src/autoroute/AutorouteEngine.cpp
   src/autoroute/MazeSearchAlgo.cpp
   src/autoroute/SimpleGridRouter.cpp
@@ -56,6 +57,8 @@ add_library(freerouting
   src/autoroute/PushAndShove.cpp
   src/board/DrcEngine.cpp
   src/cli/CommandLineArgs.cpp
+  src/geometry/Line.cpp
+  src/geometry/IntBoxShape.cpp
   src/io/DsnReader.cpp
   src/io/DsnBoardConverter.cpp
   src/visualization/CongestionHeatmap.cpp

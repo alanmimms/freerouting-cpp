@@ -8,6 +8,8 @@
 #include "autoroute/MazeListElement.h"
 #include "autoroute/ExpansionDrill.h"
 #include "autoroute/DrillPage.h"
+#include "autoroute/ExpansionRoomGenerator.h"
+#include "geometry/IntBoxShape.h"
 #include "board/Item.h"
 #include "board/RoutingBoard.h"
 #include "board/Pin.h"
@@ -166,15 +168,24 @@ bool MazeSearchAlgo::init(
     // For each item, create an incomplete room
     // Java gets trace_connection_shape from item, we use bounding box for Phase 1
     int layer = item->firstLayer();
+    IntBox itemBox = item->getBoundingBox();
 
-    // TODO Phase 2: Get actual trace connection shape from item
-    // For now, use nullptr for room shape (will expand from contained shape)
+    // PHASE 3C: Create actual room shapes for proper maze search
+    // Create containedShape from item bounding box (what must stay in the room)
+    const Shape* containedShape = new IntBoxShape(itemBox);
+
+    // Create initial room shape (large area that will be restricted by obstacles)
+    // Use ExpansionRoomGenerator to create a properly sized initial room
+    int netNumber = this->autorouteEngine->getNetNo();
+    ExpansionRoomGenerator* roomGen = this->autorouteEngine->getRoomGenerator(netNumber);
     const Shape* roomShape = nullptr;
 
-    // Contained shape is the area we can expand from (item bounding box)
-    // Convert IntBox to Shape - for now use nullptr, room will be completed by engine
-    const Shape* containedShape = nullptr;  // TODO: Create shape from itemBox
+    if (roomGen) {
+      TileShape* tileShape = roomGen->createInitialRoomShape(layer, itemBox, dynamic_cast<const TileShape*>(containedShape));
+      roomShape = static_cast<const Shape*>(tileShape);  // Safe cast - TileShape now inherits from Shape
+    }
 
+    // Add the incomplete room with the generated shapes
     IncompleteFreeSpaceExpansionRoom* startRoom =
       this->autorouteEngine->addIncompleteExpansionRoom(roomShape, layer, containedShape);
 
@@ -345,6 +356,12 @@ MazeSearchAlgo::Result MazeSearchAlgo::findConnection() {
 
   // If we got an empty path, fall back to simple 2-point
   if (pathPoints.empty() && !this->startItems.empty() && !this->destItems.empty()) {
+    static int fallbackCount = 0;
+    if (fallbackCount < 3) {
+      std::cerr << "WARNING: Backtracking failed, using 2-point fallback (destinationDoor="
+                << (this->destinationDoor ? "set" : "null") << ")" << std::endl;
+      fallbackCount++;
+    }
     Item* startItem = this->startItems[0];
     Item* destItem = this->destItems[0];
 
@@ -372,8 +389,6 @@ bool MazeSearchAlgo::occupyNextElement() {
     std::cout << "occupyNextElement: destination already reached\n";
     return false; // destination already reached
   }
-
-  std::cout << "occupyNextElement: expansion list size = " << (mazeExpansionList.empty() ? 0 : 1) << "\n";
 
   MazeListElement* listElement = nullptr;
   MazeSearchElement* currDoorSection = nullptr;

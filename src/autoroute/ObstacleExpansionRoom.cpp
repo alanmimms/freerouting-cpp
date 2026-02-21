@@ -19,14 +19,15 @@ ObstacleExpansionRoom::ObstacleExpansionRoom(Item* obstacleItem, int indexInItem
     indexInItem(indexInItem),
     roomShape(nullptr),
     doorsCalculated(false) {
-  if (obstacleItem && shapeTree) {
-    roomShape = obstacleItem->getTreeShape(shapeTree, indexInItem);
+  (void)shapeTree;  // Not needed anymore, Item provides shape directly
+  if (obstacleItem) {
+    roomShape = obstacleItem->getTreeShape(indexInItem);
   }
 }
 
 int ObstacleExpansionRoom::getLayer() const {
   if (item) {
-    return item->shapeLayer(indexInItem);
+    return item->getShapeLayer(indexInItem);
   }
   return 0;
 }

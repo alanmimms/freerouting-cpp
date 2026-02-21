@@ -1,9 +1,14 @@
 #include "autoroute/ExpansionRoomGenerator.h"
 #include "autoroute/FreeSpaceExpansionRoom.h"
+#include "autoroute/IncompleteFreeSpaceExpansionRoom.h"
 #include "autoroute/ExpansionDoor.h"
+#include "autoroute/ShapeSearchTree.h"
 #include "board/RoutingBoard.h"
 #include "geometry/Shape.h"
+#include "geometry/IntBoxShape.h"
+#include "geometry/Line.h"
 #include <algorithm>
+#include <limits>
 
 namespace freerouting {
 
@@ -207,6 +212,102 @@ FreeSpaceExpansionRoom* ExpansionRoomGenerator::findRoomContaining(IntPoint poin
     }
   }
   return nullptr;
+}
+
+// ========== Phase 3B: Room Shape Completion ==========
+
+TileShape* ExpansionRoomGenerator::createInitialRoomShape(
+    int /* layer */,
+    const IntBox& itemBox,
+    const TileShape* /* containedShape */) {
+
+  // Create a moderate expansion around the item
+  // The maze search will expand rooms as needed to reach destination
+  // Use about 2.5mm = 250000 internal units for initial expansion
+  constexpr int expansionDistance = 250000;  // 2.5mm expansion in all directions
+
+  IntBox expandedBox(
+    itemBox.ll.x - expansionDistance,
+    itemBox.ll.y - expansionDistance,
+    itemBox.ur.x + expansionDistance,
+    itemBox.ur.y + expansionDistance
+  );
+
+  return new IntBoxShape(expandedBox);
+}
+
+TileShape* ExpansionRoomGenerator::completeRoomShape(
+    IncompleteFreeSpaceExpansionRoom* incompleteRoom,
+    const TileShape* containedShape,
+    int layer,
+    int netNo,
+    ShapeSearchTree* searchTree) {
+
+  if (!searchTree || !incompleteRoom) {
+    return nullptr;  // No search tree or incomplete room available
+  }
+
+  // Get initial room shape
+  const TileShape* initialShape = dynamic_cast<const TileShape*>(incompleteRoom->getShape());
+  if (!initialShape) {
+    return nullptr;  // No valid initial shape
+  }
+
+  IntBox initialBounds = initialShape->getBoundingBox();
+
+  // For now, just return initial shape without obstacle avoidance
+  // TODO: Implement proper obstacle avoidance with restrainShape() once we have
+  // better shape operations (intersection, halfplane cutting, etc.)
+  (void)containedShape;
+  (void)layer;
+  (void)netNo;
+  (void)searchTree;
+
+  return new IntBoxShape(initialBounds);
+}
+
+TileShape* ExpansionRoomGenerator::restrainShape(
+    TileShape* roomShape,
+    const TileShape* obstacleShape,
+    const TileShape* containedShape) {
+
+  if (!roomShape || !obstacleShape || !containedShape) {
+    return roomShape;
+  }
+
+  // Find the obstacle edge that best separates containedShape from obstacle
+  int bestEdgeIndex = -1;
+  double maxDistance = -std::numeric_limits<double>::infinity();
+
+  int edgeCount = obstacleShape->borderLineCount();
+  for (int i = 0; i < edgeCount; i++) {
+    Line edgeLine = obstacleShape->borderLine(i);
+
+    // Check if this edge intersects room interior
+    if (!roomShape->intersectsInterior(edgeLine)) {
+      continue;  // Edge doesn't cut through room
+    }
+
+    // Check if contained_shape is on the correct side (away from obstacle)
+    double distance = containedShape->distanceToLeft(edgeLine);
+
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      bestEdgeIndex = i;
+    }
+  }
+
+  if (bestEdgeIndex < 0) {
+    // No suitable edge found - return unchanged
+    return roomShape;
+  }
+
+  // Cut room with the opposite half-plane of the best edge
+  Line bestEdge = obstacleShape->borderLine(bestEdgeIndex);
+  Line cutLine = bestEdge.opposite();  // Use opposite to keep contained_shape side
+
+  TileShape* restrainedShape = roomShape->intersectionWithHalfplane(cutLine);
+  return restrainedShape ? restrainedShape : roomShape;
 }
 
 } // namespace freerouting

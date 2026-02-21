@@ -2,6 +2,7 @@
 #define FREEROUTING_AUTOROUTE_EXPANSIONROOM_H
 
 #include "geometry/Shape.h"
+#include "autoroute/ShapeSearchTree.h"
 #include <vector>
 
 namespace freerouting {
@@ -12,7 +13,7 @@ class ExpandableObject;
 
 // Interface for expansion rooms used in maze search algorithm
 // Expansion rooms represent routeable areas and obstacles on the PCB
-class ExpansionRoom {
+class ExpansionRoom : public SearchTreeObject {
 public:
   virtual ~ExpansionRoom() = default;
 
@@ -41,6 +42,25 @@ public:
 
   // Returns the layer of this expansion room
   virtual int getLayer() const = 0;
+
+  // SearchTreeObject interface implementation
+  // Rooms have a single shape at index 0
+  const Shape* getTreeShape(int shapeIndex) const override {
+    return (shapeIndex == 0) ? getShape() : nullptr;
+  }
+
+  int getShapeLayer(int shapeIndex) const override {
+    return (shapeIndex == 0) ? getLayer() : -1;
+  }
+
+  int treeShapeCount() const override {
+    return 1;  // Rooms have exactly one shape
+  }
+
+  // Rooms are not obstacles for routing (items are)
+  bool isTraceObstacle(int /* netNo */) const override {
+    return false;
+  }
 
 protected:
   ExpansionRoom() = default;

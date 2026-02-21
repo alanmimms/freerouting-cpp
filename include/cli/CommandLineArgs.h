@@ -17,6 +17,7 @@ struct CommandLineArgs {
   int maxThreads = 0;  // 0 = auto-detect
   int timeLimit = 0;   // 0 = no limit (seconds)
   bool optimize = true;
+  bool removeExistingRoutes = false;  // Remove all traces/vias before routing
 
   // DRC options
   bool runDrc = true;
